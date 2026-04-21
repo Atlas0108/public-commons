@@ -25,6 +25,7 @@ import '../features/groups/manage_groups_screen.dart';
 import '../features/post/create_hub_screen.dart';
 import '../features/profile/connection_requests_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/profile/saved_posts_screen.dart';
 import '../features/profile/staff_screen.dart';
 import 'auth_redirect.dart';
 import 'profile_gate_refresh.dart';
@@ -157,16 +158,7 @@ GoRouter createAppRouter({
             routes: [
               GoRoute(
                 path: '/post',
-                builder: (context, state) {
-                  final tab = state.uri.queryParameters['tab'] ?? '';
-                  var idx = 0;
-                  if (tab == 'my' || tab == 'content' || tab == '1') {
-                    idx = 1;
-                  } else if (tab == 'saved' || tab == '2') {
-                    idx = 2;
-                  }
-                  return CreateHubScreen(initialTabIndex: idx);
-                },
+                builder: (context, state) => const CreateHubScreen(),
               ),
             ],
           ),
@@ -277,6 +269,11 @@ GoRouter createAppRouter({
         parentNavigatorKey: rootNavigatorKey,
         path: '/connections',
         builder: (context, state) => const ConnectionRequestsScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/saved',
+        builder: (context, state) => const SavedPostsScreen(),
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

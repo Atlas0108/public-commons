@@ -348,48 +348,7 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
   }
 
   Widget _buildPrimaryProfileActions(BuildContext context, ThemeData theme) {
-    if (widget.isAuthUserDoc && !widget.actingAsOrganization) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: FilledButton(
-              onPressed: () => context.go('/inbox'),
-              style: FilledButton.styleFrom(
-                backgroundColor: _headerGreen,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              child: const Text('Inbox'),
-            ),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: _profileGearSize,
-            height: _profileGearSize,
-            child: Material(
-              color: _gearBg,
-              borderRadius: BorderRadius.circular(14),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () => _openEdit(context),
-                child: const Center(
-                  child: Icon(
-                    Icons.settings,
-                    color: _gearIcon,
-                    size: _profileGearIconSize,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-    if (widget.fromProfileTab && widget.actingAsOrganization) {
+    if (widget.isAuthUserDoc) {
       return const SizedBox.shrink();
     }
     return SizedBox(
@@ -792,17 +751,19 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
       ),
     );
 
-    return NotificationListener<ScrollNotification>(
-      onNotification: (ScrollNotification n) {
-        if (n.metrics.axis != Axis.vertical) return false;
-        final px = n.metrics.pixels;
-        final stuck = px >= _identityStickScrollThreshold;
-        if (stuck != _identityHeaderStuck) {
-          setState(() => _identityHeaderStuck = stuck);
-        }
-        return false;
-      },
-      child: CustomScrollView(
+    return Stack(
+      children: [
+        NotificationListener<ScrollNotification>(
+          onNotification: (ScrollNotification n) {
+            if (n.metrics.axis != Axis.vertical) return false;
+            final px = n.metrics.pixels;
+            final stuck = px >= _identityStickScrollThreshold;
+            if (stuck != _identityHeaderStuck) {
+              setState(() => _identityHeaderStuck = stuck);
+            }
+            return false;
+          },
+          child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverPadding(
@@ -925,8 +886,59 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
             ),
           ),
         ),
+          ],
+          ),
+        ),
+        if (widget.isAuthUserDoc && !widget.actingAsOrganization)
+          Positioned(
+            top: 8,
+            right: 16,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: _profileGearSize,
+                  height: _profileGearSize,
+                  child: Material(
+                    color: _gearBg,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () => context.push('/saved'),
+                      child: const Center(
+                        child: Icon(
+                          Icons.bookmark_outline,
+                          color: _gearIcon,
+                          size: _profileGearIconSize,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: _profileGearSize,
+                  height: _profileGearSize,
+                  child: Material(
+                    color: _gearBg,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () => _openEdit(context),
+                      child: const Center(
+                        child: Icon(
+                          Icons.settings,
+                          color: _gearIcon,
+                          size: _profileGearIconSize,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
-      ),
     );
   }
 }
