@@ -21,11 +21,12 @@ import 'public_commons_invite_sheet.dart';
 import '../../widgets/adaptive_post_cover_frame.dart';
 import '../../widgets/expanded_post_card.dart';
 import '../../widgets/post_author_row.dart';
+import '../../widgets/post_comment_button.dart';
 import '../../widgets/post_kind_icon_badge.dart';
 import '../../widgets/post_reaction_buttons.dart';
 import '../../widgets/post_save_button.dart';
 
-Widget _feedCardWithSave(String contentId, Widget editorialCard) {
+Widget _feedCardWithSave(String contentId, Widget editorialCard, {VoidCallback? onCommentTap}) {
   return Stack(
     clipBehavior: Clip.none,
     children: [
@@ -37,6 +38,8 @@ Widget _feedCardWithSave(String contentId, Widget editorialCard) {
           mainAxisSize: MainAxisSize.min,
           children: [
             PostReactionButtons(postId: contentId, compact: true),
+            const SizedBox(width: 6),
+            PostCommentButton(postId: contentId, compact: true, onTap: onCommentTap),
             const SizedBox(width: 6),
             PostSaveButton(contentId: contentId),
           ],
@@ -779,6 +782,7 @@ class _EventFeedCard extends StatelessWidget {
           ],
         ),
       ),
+      onCommentTap: () => context.push('/event/${event.id}'),
     );
   }
 
@@ -884,6 +888,7 @@ class _EventFeedCard extends StatelessWidget {
           ],
         ),
       ),
+      onCommentTap: () => context.push('/event/${event.id}'),
     );
   }
 }
@@ -1073,7 +1078,16 @@ class _PostFeedCard extends StatelessWidget {
           ),
         ),
       ),
+      onCommentTap: () => _openCommentDetail(context),
     );
+  }
+
+  void _openCommentDetail(BuildContext context) {
+    if (post.kind == PostKind.communityEvent) {
+      context.push('/event/${post.id}');
+    } else {
+      openExpandedPostCard(context, post, focusComments: true);
+    }
   }
 
   Widget _buildImageHeroCard(BuildContext context) {
@@ -1181,6 +1195,7 @@ class _PostFeedCard extends StatelessWidget {
           ),
         ),
       ),
+      onCommentTap: () => _openCommentDetail(context),
     );
   }
 }

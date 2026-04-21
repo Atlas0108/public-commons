@@ -20,6 +20,7 @@ import 'core/config/app_config.dart';
 import 'core/app_google_fonts.dart';
 import 'core/config/firebase_storage_factory.dart';
 import 'core/app_trace.dart';
+import 'core/services/comments_service.dart';
 import 'core/services/connection_service.dart';
 import 'core/services/event_service.dart';
 import 'core/services/group_service.dart';
@@ -176,6 +177,7 @@ class _FirebaseShellState extends State<_FirebaseShell> {
   late final UserProfileService _userProfileService;
   late final PostService _postService;
   late final PostReactionsService _postReactionsService;
+  late final CommentsService _commentsService;
   late final SavedPostsService _savedPostsService;
   late final EventService _eventService;
   late final MessagingService _messagingService;
@@ -197,6 +199,7 @@ class _FirebaseShellState extends State<_FirebaseShell> {
     _userProfileService = UserProfileService(firestore, auth, storage);
     _postService = PostService(firestore, auth, storage);
     _postReactionsService = PostReactionsService(firestore, auth);
+    _commentsService = CommentsService(firestore, auth);
     _savedPostsService = SavedPostsService(firestore, auth);
     _eventService = EventService(firestore, auth, storage);
     _messagingService = MessagingService(firestore, auth);
@@ -226,6 +229,7 @@ class _FirebaseShellState extends State<_FirebaseShell> {
         Provider<UserProfileService>.value(value: _userProfileService),
         Provider<PostService>.value(value: _postService),
         Provider<PostReactionsService>.value(value: _postReactionsService),
+        Provider<CommentsService>.value(value: _commentsService),
         Provider<SavedPostsService>.value(value: _savedPostsService),
         Provider<EventService>.value(value: _eventService),
         Provider<MessagingService>.value(value: _messagingService),

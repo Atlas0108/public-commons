@@ -339,6 +339,18 @@ service cloud.firestore {
           && request.resource.data.postId == postId;
         allow delete: if signedIn() && reactionUid == uid();
       }
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.authorId == uid()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000
+          && request.resource.data.postId == postId;
+        allow update: if false;
+        allow delete: if signedIn() && resource.data.authorId == uid();
+      }
     }
 
     match /events/{eventId} {
@@ -357,6 +369,17 @@ service cloud.firestore {
           && request.resource.data.type is string
           && request.resource.data.type in ['like', 'dislike'];
         allow delete: if signedIn() && reactionUid == uid();
+      }
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.authorId == uid()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000;
+        allow update: if false;
+        allow delete: if signedIn() && resource.data.authorId == uid();
       }
     }
 

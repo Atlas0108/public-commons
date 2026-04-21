@@ -9,11 +9,13 @@ import '../core/models/post_kind.dart';
 import 'adaptive_post_cover_frame.dart';
 import 'message_poster_button.dart';
 import 'post_author_row.dart';
+import 'post_comment_button.dart';
+import 'post_comments_section.dart';
 import 'post_kind_icon_badge.dart';
 import 'post_reaction_buttons.dart';
 import 'post_save_button.dart';
 
-void openExpandedPostCard(BuildContext context, CommonsPost post) {
+void openExpandedPostCard(BuildContext context, CommonsPost post, {bool focusComments = false}) {
   Navigator.of(context, rootNavigator: true).push(
     PageRouteBuilder(
       opaque: false,
@@ -22,7 +24,7 @@ void openExpandedPostCard(BuildContext context, CommonsPost post) {
       transitionDuration: const Duration(milliseconds: 300),
       reverseTransitionDuration: const Duration(milliseconds: 250),
       pageBuilder: (context, animation, secondaryAnimation) {
-        return ExpandedPostCard(post: post);
+        return ExpandedPostCard(post: post, focusComments: focusComments);
       },
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         return FadeTransition(
@@ -34,15 +36,46 @@ void openExpandedPostCard(BuildContext context, CommonsPost post) {
   );
 }
 
-class ExpandedPostCard extends StatelessWidget {
-  const ExpandedPostCard({super.key, required this.post});
+class ExpandedPostCard extends StatefulWidget {
+  const ExpandedPostCard({super.key, required this.post, this.focusComments = false});
 
   final CommonsPost post;
+  final bool focusComments;
+
+  @override
+  State<ExpandedPostCard> createState() => _ExpandedPostCardState();
+}
+
+class _ExpandedPostCardState extends State<ExpandedPostCard> {
+  final _scrollController = ScrollController();
+  final _commentsKey = GlobalKey();
+  final _commentInputFocusNode = FocusNode();
 
   static const _bodyColor = Color(0xFF5C6268);
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    _commentInputFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _scrollToComments() {
+    final context = _commentsKey.currentContext;
+    if (context != null) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      ).then((_) {
+        _commentInputFocusNode.requestFocus();
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final post = widget.post;
     final user = FirebaseAuth.instance.currentUser;
     final isAuthor = user?.uid == post.authorId;
     final hasImage = post.imageUrl != null && post.imageUrl!.trim().isNotEmpty;
@@ -56,6 +89,7 @@ class ExpandedPostCard extends StatelessWidget {
         body: Stack(
           children: [
             SingleChildScrollView(
+              controller: _scrollController,
               padding: EdgeInsets.fromLTRB(24, padding.top + 56, 24, padding.bottom + 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -184,7 +218,12 @@ class ExpandedPostCard extends StatelessWidget {
                   Row(
                     children: [
                       PostReactionButtons(postId: post.id),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
+                      PostCommentButton(
+                        postId: post.id,
+                        onTap: _scrollToComments,
+                      ),
+                      const SizedBox(width: 8),
                       PostSaveButton(contentId: post.id),
                     ],
                   ),
@@ -211,6 +250,15 @@ class ExpandedPostCard extends StatelessWidget {
                       child: const Text('Edit Post'),
                     ),
                   ],
+                  const SizedBox(height: 32),
+                  const Divider(),
+                  const SizedBox(height: 24),
+                  PostCommentsSection(
+                    key: _commentsKey,
+                    postId: post.id,
+                    autofocus: widget.focusComments,
+                    inputFocusNode: _commentInputFocusNode,
+                  ),
                   const SizedBox(height: 24),
                 ],
               ),
