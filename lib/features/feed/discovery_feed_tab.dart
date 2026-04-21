@@ -18,6 +18,7 @@ import '../../core/utils/event_formatting.dart';
 import '../../core/utils/merge_community_events.dart';
 import '../../core/constants/default_geo.dart';
 import '../../widgets/post_author_row.dart';
+import '../../widgets/post_reaction_buttons.dart';
 import '../../widgets/post_save_button.dart';
 
 class _FeedRow {
@@ -168,7 +169,14 @@ class _PostTile extends StatelessWidget {
           Positioned(
             right: 6,
             bottom: 6,
-            child: PostSaveButton(contentId: post.id),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                PostReactionButtons(postId: post.id, compact: true),
+                const SizedBox(width: 6),
+                PostSaveButton(contentId: post.id),
+              ],
+            ),
           ),
         ],
       ),
@@ -219,7 +227,14 @@ class _EventTile extends StatelessWidget {
           Positioned(
             right: 6,
             bottom: 6,
-            child: PostSaveButton(contentId: event.id),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                PostReactionButtons(postId: event.id, compact: true),
+                const SizedBox(width: 6),
+                PostSaveButton(contentId: event.id),
+              ],
+            ),
           ),
         ],
       ),

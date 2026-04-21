@@ -15,6 +15,7 @@ import '../../widgets/adaptive_post_cover_frame.dart';
 import '../../widgets/close_to_shell.dart';
 import '../../widgets/message_poster_button.dart';
 import '../../widgets/post_author_row.dart';
+import '../../widgets/post_reaction_buttons.dart';
 
 class EventDetailScreen extends StatelessWidget {
   const EventDetailScreen({super.key, required this.eventId});
@@ -212,6 +213,8 @@ class _EventBodyState extends State<_EventBody> {
               ],
             ),
           ],
+          const SizedBox(height: 16),
+          PostReactionButtons(postId: event.id),
           const SizedBox(height: 16),
           Text(event.description, style: Theme.of(context).textTheme.bodyLarge),
           const SizedBox(height: 24),

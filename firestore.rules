@@ -188,7 +188,15 @@ service cloud.firestore {
         return signedIn() && groupData().ownerId == uid();
       }
 
-      allow read: if signedIn() && (groupIsPublic() || groupIsMember());
+      // Split get vs list: collection queries must use rules Firestore can relate
+      // to the query. `where('memberIds', arrayContains: uid)` does not imply
+      // `visibility == 'public'`, so a combined `public || member` read rule
+      // rejects the whole query ("rules are not filters"). See:
+      // https://firebase.google.com/docs/firestore/security/rules-query
+      allow get: if signedIn() && (groupIsPublic() || groupIsMember());
+
+      // Match client query `where('memberIds', arrayContains: request.auth.uid)`.
+      allow list: if signedIn() && request.auth.uid in resource.data.memberIds;
 
       allow create: if signedIn()
         && request.resource.data.ownerId == uid()
@@ -316,12 +324,39 @@ service cloud.firestore {
       match /rsvps/{rsvpUid} {
         allow read, write: if signedIn();
       }
+
+      match /reactions/{reactionUid} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && reactionUid == uid()
+          && request.resource.data.type is string
+          && request.resource.data.type in ['like', 'dislike']
+          && request.resource.data.postId == postId;
+        allow update: if signedIn()
+          && reactionUid == uid()
+          && request.resource.data.type is string
+          && request.resource.data.type in ['like', 'dislike']
+          && request.resource.data.postId == postId;
+        allow delete: if signedIn() && reactionUid == uid();
+      }
     }
 
     match /events/{eventId} {
       allow read, write: if signedIn();
       match /rsvps/{rsvpUid} {
         allow read, write: if signedIn();
+      }
+      match /reactions/{reactionUid} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && reactionUid == uid()
+          && request.resource.data.type is string
+          && request.resource.data.type in ['like', 'dislike'];
+        allow update: if signedIn()
+          && reactionUid == uid()
+          && request.resource.data.type is string
+          && request.resource.data.type in ['like', 'dislike'];
+        allow delete: if signedIn() && reactionUid == uid();
       }
     }
 

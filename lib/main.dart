@@ -25,6 +25,7 @@ import 'core/services/event_service.dart';
 import 'core/services/group_service.dart';
 import 'core/services/messaging_service.dart';
 import 'core/services/post_service.dart';
+import 'core/services/post_reactions_service.dart';
 import 'core/services/saved_posts_service.dart';
 import 'core/services/user_profile_service.dart';
 import 'features/auth/setup_screen.dart';
@@ -174,6 +175,7 @@ class _FirebaseShellState extends State<_FirebaseShell> {
   late final ProfileGateRefresh _profileGate;
   late final UserProfileService _userProfileService;
   late final PostService _postService;
+  late final PostReactionsService _postReactionsService;
   late final SavedPostsService _savedPostsService;
   late final EventService _eventService;
   late final MessagingService _messagingService;
@@ -194,6 +196,7 @@ class _FirebaseShellState extends State<_FirebaseShell> {
     _profileGate = ProfileGateRefresh(auth, firestore);
     _userProfileService = UserProfileService(firestore, auth, storage);
     _postService = PostService(firestore, auth, storage);
+    _postReactionsService = PostReactionsService(firestore, auth);
     _savedPostsService = SavedPostsService(firestore, auth);
     _eventService = EventService(firestore, auth, storage);
     _messagingService = MessagingService(firestore, auth);
@@ -222,6 +225,7 @@ class _FirebaseShellState extends State<_FirebaseShell> {
       providers: [
         Provider<UserProfileService>.value(value: _userProfileService),
         Provider<PostService>.value(value: _postService),
+        Provider<PostReactionsService>.value(value: _postReactionsService),
         Provider<SavedPostsService>.value(value: _savedPostsService),
         Provider<EventService>.value(value: _eventService),
         Provider<MessagingService>.value(value: _messagingService),

@@ -21,6 +21,7 @@ import 'public_commons_invite_sheet.dart';
 import '../../widgets/adaptive_post_cover_frame.dart';
 import '../../widgets/post_author_row.dart';
 import '../../widgets/post_kind_icon_badge.dart';
+import '../../widgets/post_reaction_buttons.dart';
 import '../../widgets/post_save_button.dart';
 
 Widget _feedCardWithSave(String contentId, Widget editorialCard) {
@@ -31,7 +32,14 @@ Widget _feedCardWithSave(String contentId, Widget editorialCard) {
       Positioned(
         right: 6,
         bottom: 6,
-        child: PostSaveButton(contentId: contentId),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PostReactionButtons(postId: contentId, compact: true),
+            const SizedBox(width: 6),
+            PostSaveButton(contentId: contentId),
+          ],
+        ),
       ),
     ],
   );

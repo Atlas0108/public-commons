@@ -14,6 +14,7 @@ import '../../widgets/close_to_shell.dart';
 import '../../widgets/message_poster_button.dart';
 import '../../widgets/post_author_row.dart';
 import '../../widgets/post_kind_icon_badge.dart';
+import '../../widgets/post_reaction_buttons.dart';
 
 class PostDetailScreen extends StatelessWidget {
   const PostDetailScreen({super.key, required this.postId});
@@ -216,6 +217,8 @@ class _PostBodyState extends State<_PostBody> {
               MessagePosterButton(authorId: post.authorId, authorName: post.authorName),
             ],
           ),
+          const SizedBox(height: 16),
+          PostReactionButtons(postId: post.id),
           if (post.kind != PostKind.bulletin &&
               post.body != null &&
               post.body!.isNotEmpty) ...[
