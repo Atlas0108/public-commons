@@ -19,6 +19,7 @@ import '../../core/services/user_profile_service.dart';
 import 'feed_browse_location_sheet.dart';
 import 'public_commons_invite_sheet.dart';
 import '../../widgets/adaptive_post_cover_frame.dart';
+import '../../widgets/expanded_post_card.dart';
 import '../../widgets/post_author_row.dart';
 import '../../widgets/post_kind_icon_badge.dart';
 import '../../widgets/post_reaction_buttons.dart';
@@ -991,7 +992,7 @@ class _PostFeedCard extends StatelessWidget {
     if (post.kind == PostKind.communityEvent) {
       context.push('/event/${post.id}');
     } else {
-      context.push('/posts/${post.id}');
+      openExpandedPostCard(context, post);
     }
   }
 
@@ -1003,70 +1004,73 @@ class _PostFeedCard extends StatelessWidget {
 
     return _feedCardWithSave(
       post.id,
-      _EditorialCard(
-        onTap: () => _openDetail(context),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                PostKindIconBadge(kind: post.kind),
-                const Padding(
-                  padding: EdgeInsets.only(top: 6),
-                  child: Icon(Icons.arrow_forward, size: 22, color: _arrowColor),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Text(
-              postKindListHeadline(post.kind),
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: _categoryColor,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.1,
-                fontSize: 11,
+      Hero(
+        tag: 'post_card_${post.id}',
+        child: _EditorialCard(
+          onTap: () => _openDetail(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  PostKindIconBadge(kind: post.kind),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Icon(Icons.arrow_forward, size: 22, color: _arrowColor),
+                  ),
+                ],
               ),
-            ),
-            if (post.status == PostStatus.fulfilled) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 20),
               Text(
-                'FULFILLED',
+                postKindListHeadline(post.kind),
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: _categoryColor,
                   fontWeight: FontWeight.w600,
-                  letterSpacing: 1.0,
-                  fontSize: 10,
+                  letterSpacing: 1.1,
+                  fontSize: 11,
                 ),
               ),
-            ],
-            const SizedBox(height: 8),
-            Text(
-              post.displayTitleLine,
-              style: GoogleFonts.lora(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
-                height: 1.25,
-                color: const Color(0xFF141414),
+              if (post.status == PostStatus.fulfilled) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'FULFILLED',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: _categoryColor,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.0,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Text(
+                post.displayTitleLine,
+                style: GoogleFonts.lora(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                  height: 1.25,
+                  color: const Color(0xFF141414),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              _descriptionPreview(),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: _bodyColor, height: 1.45),
-            ),
-            const SizedBox(height: 20),
-            PostAuthorTapRow(
-              authorId: post.authorId,
-              authorName: post.authorName,
-              enableProfileTap: false,
-            ),
-          ],
+              const SizedBox(height: 10),
+              Text(
+                _descriptionPreview(),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: _bodyColor, height: 1.45),
+              ),
+              const SizedBox(height: 20),
+              PostAuthorTapRow(
+                authorId: post.authorId,
+                authorName: post.authorName,
+                enableProfileTap: false,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1077,101 +1081,104 @@ class _PostFeedCard extends StatelessWidget {
 
     return _feedCardWithSave(
       post.id,
-      _EditorialCard(
-        onTap: () => _openDetail(context),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: AdaptivePostCoverFrame(
-                child: Image.network(
-                  url,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) return child;
-                    return ColoredBox(
-                      color: Colors.grey.shade200,
-                      child: Center(
-                        child: SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.grey.shade500,
+      Hero(
+        tag: 'post_card_${post.id}',
+        child: _EditorialCard(
+          onTap: () => _openDetail(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: AdaptivePostCoverFrame(
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return ColoredBox(
+                        color: Colors.grey.shade200,
+                        child: Center(
+                          child: SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.grey.shade500,
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                  errorBuilder: (_, __, ___) => ColoredBox(
-                    color: Colors.grey.shade300,
-                    child: Icon(Icons.broken_image_outlined, color: Colors.grey.shade600, size: 48),
+                      );
+                    },
+                    errorBuilder: (_, __, ___) => ColoredBox(
+                      color: Colors.grey.shade300,
+                      child: Icon(Icons.broken_image_outlined, color: Colors.grey.shade600, size: 48),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        postKindListHeadline(post.kind),
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: _forestCategory,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.9,
-                          fontSize: 11,
-                        ),
-                      ),
-                      if (post.status == PostStatus.fulfilled) ...[
-                        const SizedBox(height: 4),
+              const SizedBox(height: 18),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          'FULFILLED',
+                          postKindListHeadline(post.kind),
                           style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: _forestCategory,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.8,
-                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.9,
+                            fontSize: 11,
                           ),
                         ),
+                        if (post.status == PostStatus.fulfilled) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'FULFILLED',
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: _forestCategory,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.8,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                PostKindIconBadge(kind: post.kind, compact: true),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              post.displayTitleLine,
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 26,
-                fontWeight: FontWeight.w500,
-                height: 1.2,
-                color: const Color(0xFF141414),
+                  PostKindIconBadge(kind: post.kind, compact: true),
+                ],
               ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              _descriptionPreview(),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: _bodyColor, height: 1.5, fontSize: 15),
-            ),
-            const SizedBox(height: 20),
-            PostAuthorTapRow(
-              authorId: post.authorId,
-              authorName: post.authorName,
-              enableProfileTap: false,
-            ),
-          ],
+              const SizedBox(height: 12),
+              Text(
+                post.displayTitleLine,
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w500,
+                  height: 1.2,
+                  color: const Color(0xFF141414),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _descriptionPreview(),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: _bodyColor, height: 1.5, fontSize: 15),
+              ),
+              const SizedBox(height: 20),
+              PostAuthorTapRow(
+                authorId: post.authorId,
+                authorName: post.authorName,
+                enableProfileTap: false,
+              ),
+            ],
+          ),
         ),
       ),
     );
