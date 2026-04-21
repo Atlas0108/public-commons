@@ -1,0 +1,332 @@
+rules_version = '2';
+// Chat: strict access on conversations + messages. Other paths still use the
+// permissive rule at the bottom until you lock down users/posts/events.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    // Must match [UserProfileService.normalizeStaffEmail] (trim + lowercase on write).
+    function authEmailString() {
+      return signedIn() && request.auth.token.email is string
+        ? request.auth.token.email
+        : '';
+    }
+
+    function staffListedOnUserDoc(participantUserId) {
+      return signedIn()
+        && participantUserId is string
+        && exists(/databases/$(database)/documents/users/$(participantUserId))
+        && get(/databases/$(database)/documents/users/$(participantUserId)).data.keys().hasAny(['staffEmails'])
+        && get(/databases/$(database)/documents/users/$(participantUserId)).data.staffEmails is list
+        && authEmailString() != ''
+        && authEmailString() in get(/databases/$(database)/documents/users/$(participantUserId)).data.staffEmails;
+    }
+
+    match /conversations/{convId} {
+
+      function convPath() {
+        return /databases/$(database)/documents/conversations/$(convId);
+      }
+
+      function conversationExists() {
+        return exists(convPath());
+      }
+
+      function isConversationParticipant() {
+        return signedIn()
+          && conversationExists()
+          && resource.data.participantIds is list
+          && resource.data.participantIds.size() == 2
+          && uid() in resource.data.participantIds;
+      }
+
+      function canAccessConversationDoc() {
+        return signedIn()
+          && resource.data.participantIds is list
+          && resource.data.participantIds.size() == 2
+          && (
+            uid() in resource.data.participantIds
+            || staffListedOnUserDoc(resource.data.participantIds[0])
+            || staffListedOnUserDoc(resource.data.participantIds[1])
+          );
+      }
+
+      function willBeConversationParticipant() {
+        return signedIn()
+          && request.resource.data.participantIds is list
+          && request.resource.data.participantIds.size() == 2
+          && uid() in request.resource.data.participantIds
+          && request.resource.data.participantIds[0] is string
+          && request.resource.data.participantIds[1] is string
+          && request.resource.data.participantIds[0] != request.resource.data.participantIds[1];
+      }
+
+      function willBeStaffDelegateConversation() {
+        return signedIn()
+          && request.resource.data.participantIds is list
+          && request.resource.data.participantIds.size() == 2
+          && request.resource.data.participantIds[0] is string
+          && request.resource.data.participantIds[1] is string
+          && request.resource.data.participantIds[0] != request.resource.data.participantIds[1]
+          && (
+            staffListedOnUserDoc(request.resource.data.participantIds[0])
+            || staffListedOnUserDoc(request.resource.data.participantIds[1])
+          );
+      }
+
+      function participantIdsUnchanged() {
+        return request.resource.data.participantIds == resource.data.participantIds;
+      }
+
+      // Allow listening before the doc exists (client creates right after); otherwise members or org staff.
+      allow read: if signedIn()
+        && (
+          !conversationExists()
+          || canAccessConversationDoc()
+        );
+
+      allow create: if (
+          willBeConversationParticipant()
+          && request.resource.data.keys().hasAll([
+            'participantIds',
+            'participantNames',
+            'lastMessageText',
+            'lastMessageAt',
+            'updatedAt',
+            'createdAt',
+          ])
+        )
+        || (
+          willBeStaffDelegateConversation()
+          && request.resource.data.keys().hasAll([
+            'participantIds',
+            'participantNames',
+            'lastMessageText',
+            'lastMessageAt',
+            'updatedAt',
+            'createdAt',
+          ])
+        );
+
+      allow update: if signedIn()
+        && participantIdsUnchanged()
+        && canAccessConversationDoc();
+
+      allow delete: if false;
+
+      match /messages/{msgId} {
+
+        function convParticipants() {
+          return get(convPath()).data.participantIds;
+        }
+
+        function canAccessConversationMessages() {
+          return signedIn()
+            && conversationExists()
+            && convParticipants() is list
+            && convParticipants().size() == 2
+            && (
+              uid() in convParticipants()
+              || staffListedOnUserDoc(convParticipants()[0])
+              || staffListedOnUserDoc(convParticipants()[1])
+            );
+        }
+
+        allow read: if canAccessConversationMessages();
+
+        allow create: if signedIn()
+          && conversationExists()
+          && convParticipants() is list
+          && convParticipants().size() == 2
+          && request.resource.data.keys().hasAll(['senderId', 'text', 'createdAt'])
+          && request.resource.data.senderId in convParticipants()
+          && (
+            request.resource.data.senderId == uid()
+            || staffListedOnUserDoc(request.resource.data.senderId)
+          )
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 8000;
+
+        allow update, delete: if false;
+      }
+    }
+
+    match /users/{userId}/savedPosts/{postId} {
+      allow read: if signedIn() && uid() == userId;
+      allow create: if signedIn()
+        && uid() == userId
+        && request.resource.data.postId == postId
+        && request.resource.data.keys().hasAll(['postId', 'savedAt']);
+      allow delete: if signedIn() && uid() == userId;
+      allow update: if false;
+    }
+
+    match /groups/{groupId} {
+      function groupData() {
+        return resource.data;
+      }
+
+      function groupIsPublic() {
+        return signedIn() && groupData().visibility == 'public';
+      }
+
+      function groupIsMember() {
+        return signedIn()
+          && groupData().memberIds is list
+          && uid() in groupData().memberIds;
+      }
+
+      function groupIsOwner() {
+        return signedIn() && groupData().ownerId == uid();
+      }
+
+      allow read: if signedIn() && (groupIsPublic() || groupIsMember());
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == uid()
+        && request.resource.data.ownerId is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 200
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 8000
+        && request.resource.data.visibility is string
+        && request.resource.data.visibility in ['public', 'private']
+        && request.resource.data.memberIds is list
+        && uid() in request.resource.data.memberIds
+        && request.resource.data.memberIds.size() > 0
+        && request.resource.data.memberIds.size() <= 200
+        && request.resource.data.keys().hasAll([
+          'name',
+          'description',
+          'visibility',
+          'ownerId',
+          'memberIds',
+        ]);
+
+      // Owner edits details and membership; non-owners may only remove themselves (leave).
+      allow update: if signedIn()
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.visibility == resource.data.visibility
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 200
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 8000
+        && request.resource.data.memberIds is list
+        && request.resource.data.memberIds.size() > 0
+        && request.resource.data.memberIds.size() <= 200
+        && (
+          (
+            groupIsOwner()
+            && uid() in request.resource.data.memberIds
+          )
+          || (
+            groupIsMember()
+            && !groupIsOwner()
+            && request.resource.data.name == resource.data.name
+            && request.resource.data.description == resource.data.description
+            && !(uid() in request.resource.data.memberIds)
+            && request.resource.data.memberIds.size() == resource.data.memberIds.size() - 1
+            && resource.data.memberIds.hasAll(request.resource.data.memberIds)
+          )
+        );
+
+      allow delete: if signedIn() && groupIsOwner();
+    }
+
+    // App data (kept explicit so `groups` privacy rules are not overridden).
+    match /posts/{postId} {
+
+      function postGroupId(data) {
+        return ('groupId' in data)
+          && data.groupId is string
+          && data.groupId.size() > 0;
+      }
+
+      function groupDocPath(gid) {
+        return /databases/$(database)/documents/groups/$(gid);
+      }
+
+      function canReadGroupedPost(data) {
+        let gid = data.groupId;
+        return exists(groupDocPath(gid))
+          && (
+            get(groupDocPath(gid)).data.visibility == 'public'
+            || (
+              get(groupDocPath(gid)).data.memberIds is list
+              && uid() in get(groupDocPath(gid)).data.memberIds
+            )
+          );
+      }
+
+      function isMemberOfPostGroup(gid) {
+        return exists(groupDocPath(gid))
+          && get(groupDocPath(gid)).data.memberIds is list
+          && uid() in get(groupDocPath(gid)).data.memberIds;
+      }
+
+      function postReadable() {
+        return !postGroupId(resource.data) || canReadGroupedPost(resource.data);
+      }
+
+      allow read: if signedIn() && postReadable();
+
+      allow create: if signedIn()
+        && (
+          !postGroupId(request.resource.data)
+          || isMemberOfPostGroup(request.resource.data.groupId)
+        );
+
+      allow update: if signedIn()
+        && postReadable()
+        && (
+          !postGroupId(resource.data)
+          || resource.data.authorId == uid()
+        )
+        && (
+          !postGroupId(resource.data)
+          || !('groupId' in request.resource.data)
+          || request.resource.data.groupId == resource.data.groupId
+        );
+
+      allow delete: if signedIn()
+        && postReadable()
+        && (
+          !postGroupId(resource.data)
+          || resource.data.authorId == uid()
+        );
+
+      match /rsvps/{rsvpUid} {
+        allow read, write: if signedIn();
+      }
+    }
+
+    match /events/{eventId} {
+      allow read, write: if signedIn();
+      match /rsvps/{rsvpUid} {
+        allow read, write: if signedIn();
+      }
+    }
+
+    match /users/{userId} {
+      allow read, write: if signedIn();
+    }
+
+    match /users/{userId}/connections/{peerId} {
+      allow read, write: if signedIn();
+    }
+
+    match /users/{userId}/connectionRequests/{fromId} {
+      allow read, write: if signedIn();
+    }
+  }
+}

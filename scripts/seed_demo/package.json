@@ -1,0 +1,10 @@
+{
+  "name": "public-commons-seed-demo",
+  "private": true,
+  "type": "module",
+  "description": "Create 5 demo Auth users (personal, nonprofit, business) plus Firestore users, events, help offers, and help requests (Firebase Admin).",
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "ngeohash": "^0.6.3"
+  }
+}

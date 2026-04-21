@@ -1,0 +1,7 @@
+{
+  "projects": {
+    "default": "public-commons",
+    "public-commons": "public-commons"
+  },
+  "etags": {}
+}

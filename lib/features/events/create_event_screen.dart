@@ -1,0 +1,570 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+
+import '../../app/app_scaffold_messenger.dart';
+import '../../app/view_as_controller.dart';
+import '../../core/config/dev_compose_prefills.dart';
+import '../../core/constants/default_geo.dart';
+import '../../core/app_trace.dart';
+import '../../core/models/community_event.dart';
+import '../../core/services/event_service.dart';
+import '../../core/services/location_search_service.dart';
+import '../../core/services/user_profile_service.dart';
+import '../../core/utils/blob_from_object_url.dart';
+import '../../widgets/adaptive_post_cover_frame.dart';
+import '../../widgets/city_search_field.dart';
+import '../../widgets/close_to_shell.dart';
+
+class CreateEventScreen extends StatefulWidget {
+  const CreateEventScreen({super.key, this.editingEventId, this.groupId});
+
+  /// When set (from `/event/:id/edit`), loads that event for editing (organizer only).
+  final String? editingEventId;
+
+  /// When set (from `/post/new/event?groupId=…`), event is listed in that group’s feed.
+  final String? groupId;
+
+  @override
+  State<CreateEventScreen> createState() => _CreateEventScreenState();
+}
+
+class _CreateEventScreenState extends State<CreateEventScreen> {
+  final _title = TextEditingController();
+  final _organizer = TextEditingController();
+  final _description = TextEditingController();
+  late DateTime _startsAt;
+  late DateTime _endsAt;
+
+  /// Map pin for discovery; optional profile home replaces default after fetch.
+  GeoSearchResult? _eventMapLocation;
+  bool _busy = false;
+  XFile? _pickedXFile;
+  Uint8List? _pickedImageBytes;
+  String? _pickedImageMime;
+
+  CommunityEvent? _editingEvent;
+  bool _loadingEdit = false;
+  bool _removeExistingCover = false;
+  String? _existingCoverUrl;
+
+  bool get _isEditMode => widget.editingEventId != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final base = DateTime.now().add(const Duration(days: 1));
+    _startsAt = DateTime(base.year, base.month, base.day, base.hour.clamp(0, 23), 0);
+    _endsAt = _startsAt.add(const Duration(hours: 1));
+    if (_isEditMode) {
+      _eventMapLocation = null;
+      _loadingEdit = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadEventForEdit());
+    } else {
+      _eventMapLocation = GeoSearchResult(label: 'San Francisco area', geoPoint: kDefaultGeoPoint);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        commonsTrace('CreateEventScreen postFrameCallback');
+        if (!mounted) return;
+        final u = FirebaseAuth.instance.currentUser;
+        if (u == null) {
+          commonsTrace('CreateEventScreen postFrameCallback no user');
+          return;
+        }
+        unawaited(_bootstrapNewEventForm(u.uid));
+      });
+    }
+  }
+
+  Future<void> _bootstrapNewEventForm(String uid) async {
+    await _applyProfileDefaults(uid);
+    if (!mounted) return;
+    DevComposePrefills.applyNewEvent(
+      title: _title,
+      organizer: _organizer,
+      description: _description,
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadEventForEdit() async {
+    final id = widget.editingEventId;
+    if (id == null || !mounted) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) context.pop();
+      return;
+    }
+    try {
+      final e = await context.read<EventService>().fetchEvent(id);
+      if (!mounted) return;
+      if (e == null || e.organizerId != user.uid) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('You can only edit your own events.')));
+        context.pop();
+        return;
+      }
+      final end = e.endsAt ?? e.startsAt.add(const Duration(hours: 1));
+      final url = e.imageUrl?.trim();
+      setState(() {
+        _editingEvent = e;
+        _title.text = e.title;
+        _organizer.text = e.organizerName;
+        _description.text = e.description;
+        _startsAt = e.startsAt.toLocal();
+        _endsAt = end.toLocal();
+        final loc = e.locationDescription.trim();
+        _eventMapLocation = GeoSearchResult(
+          geoPoint: e.geoPoint,
+          label: loc.isNotEmpty ? loc.replaceAll(RegExp(r'\s+'), ' ') : 'Event location',
+        );
+        _existingCoverUrl = url != null && url.isNotEmpty ? url : null;
+        _removeExistingCover = false;
+        _loadingEdit = false;
+      });
+    } catch (e, st) {
+      commonsTrace('CreateEventScreen._loadEventForEdit', e);
+      assert(() {
+        commonsTrace('CreateEventScreen._loadEventForEdit stack', st);
+        return true;
+      }());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        context.pop();
+      }
+    }
+  }
+
+  /// Best-effort: never block the form on Firestore (offline / slow get() otherwise spins forever).
+  Future<void> _applyProfileDefaults(String uid) async {
+    commonsTrace('CreateEventScreen._applyProfileDefaults start', uid);
+    try {
+      final p = await context.read<UserProfileService>().fetchProfile(uid);
+      commonsTrace('CreateEventScreen._applyProfileDefaults fetchProfile done', '${p != null}');
+      if (!mounted) return;
+      setState(() {
+        final home = p?.homeGeoPoint;
+        if (home != null) {
+          final label = p?.homeCityLabel?.trim();
+          _eventMapLocation = GeoSearchResult(
+            geoPoint: home,
+            label: label != null && label.isNotEmpty ? label : 'Home',
+          );
+        }
+        final name = p?.publicDisplayLabel.trim();
+        if (name != null &&
+            name.isNotEmpty &&
+            name != 'Neighbor' &&
+            _organizer.text.trim().isEmpty) {
+          _organizer.text = name;
+        }
+      });
+    } on Exception catch (e, st) {
+      commonsTrace('CreateEventScreen._applyProfileDefaults error', e);
+      assert(() {
+        commonsTrace('CreateEventScreen._applyProfileDefaults stack', st);
+        return true;
+      }());
+    }
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _organizer.dispose();
+    _description.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickStartsAt() async {
+    final firstDate = _isEditMode
+        ? DateTime.now().subtract(const Duration(days: 365 * 10))
+        : DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _startsAt.isBefore(firstDate) ? firstDate : _startsAt,
+      firstDate: firstDate,
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+    );
+    if (d == null || !mounted) return;
+    final t = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_startsAt),
+    );
+    if (t == null || !mounted) return;
+    setState(() {
+      _startsAt = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+      if (!_endsAt.isAfter(_startsAt)) {
+        _endsAt = _startsAt.add(const Duration(hours: 1));
+      }
+    });
+  }
+
+  Future<void> _pickImage() async {
+    final x = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1280,
+      maxHeight: 1280,
+      imageQuality: 78,
+    );
+    if (x == null) return;
+    if (!mounted) return;
+    if (kIsWeb) {
+      setState(() {
+        _pickedXFile = x;
+        _pickedImageBytes = null;
+        _pickedImageMime = x.mimeType;
+        _removeExistingCover = false;
+        _existingCoverUrl = null;
+      });
+    } else {
+      final bytes = await x.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _pickedXFile = null;
+        _pickedImageBytes = bytes;
+        _pickedImageMime = x.mimeType;
+        _removeExistingCover = false;
+        _existingCoverUrl = null;
+      });
+    }
+  }
+
+  void _clearImage() {
+    setState(() {
+      _pickedXFile = null;
+      _pickedImageBytes = null;
+      _pickedImageMime = null;
+      if (_editingEvent != null && _existingCoverUrl != null) {
+        _removeExistingCover = true;
+        _existingCoverUrl = null;
+      }
+    });
+  }
+
+  bool get _hasPickedImage => _pickedImageBytes != null || (kIsWeb && _pickedXFile != null);
+
+  bool get _showingCover => _hasPickedImage || (_existingCoverUrl != null && !_removeExistingCover);
+
+  Future<void> _pickEndsAt() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _endsAt.isBefore(_startsAt) ? _startsAt : _endsAt,
+      firstDate: DateTime(_startsAt.year, _startsAt.month, _startsAt.day),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+    );
+    if (d == null || !mounted) return;
+    final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_endsAt));
+    if (t == null || !mounted) return;
+    setState(() {
+      _endsAt = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+    });
+  }
+
+  Future<void> _save() async {
+    final title = _title.text.trim();
+    final organizer = _organizer.text.trim();
+    final description = _description.text.trim();
+    final mapPlace = _eventMapLocation;
+
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Add an event title.')));
+      return;
+    }
+    if (organizer.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Add an organizer or group name.')));
+      return;
+    }
+    if (description.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Add a description and agenda.')));
+      return;
+    }
+    if (mapPlace == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose a city or area from the search suggestions.')),
+      );
+      return;
+    }
+    final geo = mapPlace.geoPoint;
+    final loc = mapPlace.label.trim();
+    if (!_endsAt.isAfter(_startsAt)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('End time must be after start time.')));
+      return;
+    }
+
+    commonsTrace('CreateEventScreen._save validation OK, set busy');
+    setState(() => _busy = true);
+    try {
+      commonsTrace('CreateEventScreen._save calling EventService.createEvent');
+      Object? webBlob;
+      Uint8List? imageBytes = _pickedImageBytes;
+      if (kIsWeb && _pickedXFile != null) {
+        commonsTrace('CreateEventScreen._save resolving web Blob');
+        webBlob = await blobFromObjectUrl(_pickedXFile!.path);
+        if (webBlob != null) {
+          imageBytes = null;
+        } else {
+          commonsTrace('CreateEventScreen._save blob URL fetch failed, using bytes');
+          imageBytes = await _pickedXFile!.readAsBytes();
+        }
+      }
+      if (!mounted) return;
+      final editing = _editingEvent;
+      if (editing != null) {
+        commonsTrace('CreateEventScreen._save calling EventService.updateEvent');
+        await context.read<EventService>().updateEvent(
+          event: editing,
+          title: title,
+          description: description,
+          organizerName: organizer,
+          startsAt: _startsAt,
+          endsAt: _endsAt,
+          locationDescription: loc,
+          geoPoint: geo,
+          userRemovedCover: _removeExistingCover && !_hasPickedImage,
+          newCoverBytes: imageBytes,
+          newCoverWebBlob: webBlob,
+          newCoverContentType: _pickedImageMime,
+        );
+        commonsTrace('CreateEventScreen._save updateEvent returned');
+        if (!mounted) return;
+        if (!context.mounted) return;
+        context.pop();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          appScaffoldMessengerKey.currentState?.showSnackBar(
+            const SnackBar(content: Text('Event updated')),
+          );
+        });
+      } else {
+        final viewAs = context.read<ViewAsController>();
+        final eventSvc = context.read<EventService>();
+        final profileSvc = context.read<UserProfileService>();
+        final orgUid = viewAs.actingOrganizationUid;
+        if (orgUid != null) {
+          await profileSvc.assertCurrentUserMayActAsOrganization(orgUid);
+        }
+        await eventSvc.createEvent(
+          title: title,
+          description: description,
+          organizerName: organizer,
+          startsAt: _startsAt,
+          endsAt: _endsAt,
+          locationDescription: loc,
+          geoPoint: geo,
+          imageBytes: imageBytes,
+          imageContentType: _pickedImageMime,
+          webImageBlob: webBlob,
+          postAsOrganizerUid: orgUid,
+          groupId: widget.groupId,
+        );
+        commonsTrace('CreateEventScreen._save createEvent returned');
+        if (!mounted) {
+          commonsTrace('CreateEventScreen._save not mounted after create');
+          return;
+        }
+        if (!context.mounted) return;
+        final g = widget.groupId?.trim();
+        if (g != null && g.isNotEmpty) {
+          commonsTrace('CreateEventScreen._save context.go(/groups/$g)');
+          context.go('/groups/$g');
+        } else {
+          commonsTrace('CreateEventScreen._save context.go(/home)');
+          context.go('/home');
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          appScaffoldMessengerKey.currentState?.showSnackBar(
+            const SnackBar(content: Text('Event published')),
+          );
+        });
+      }
+    } catch (e, st) {
+      commonsTrace('CreateEventScreen._save catch', e);
+      assert(() {
+        commonsTrace('CreateEventScreen._save stack', st);
+        return true;
+      }());
+      if (!mounted) return;
+      final message = _eventSaveErrorMessage(e);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      commonsTrace('CreateEventScreen._save finally clear busy');
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dateTimeFmt = DateFormat.yMMMd().add_jm();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_isEditMode ? 'Edit event' : 'New event'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
+        actions: const [CloseToShellIconButton()],
+      ),
+      body: _loadingEdit
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: _title,
+                    decoration: const InputDecoration(
+                      labelText: 'Event title',
+                      hintText: 'Short, clear name',
+                      helperText: 'Keep it clear and concise.',
+                      border: OutlineInputBorder(),
+                    ),
+                    textCapitalization: TextCapitalization.sentences,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _organizer,
+                    decoration: const InputDecoration(
+                      labelText: 'Organizer name or group',
+                      hintText: 'Who is hosting?',
+                      border: OutlineInputBorder(),
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _description,
+                    decoration: const InputDecoration(
+                      labelText: 'Event description',
+                      hintText: 'What to expect, schedule, what to bring…',
+                      helperText: 'Details and agenda.',
+                      alignLabelWithHint: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    textCapitalization: TextCapitalization.sentences,
+                    minLines: 4,
+                    maxLines: 8,
+                  ),
+                  const SizedBox(height: 20),
+                  Text('Cover photo (optional)', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 8),
+                  if (_showingCover) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: AdaptivePostCoverFrame(
+                        child: _hasPickedImage
+                            ? (kIsWeb && _pickedXFile != null
+                                  ? Image.network(_pickedXFile!.path, fit: BoxFit.cover)
+                                  : Image.memory(_pickedImageBytes!, fit: BoxFit.cover))
+                            : Image.network(
+                                _existingCoverUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => ColoredBox(
+                                  color: Colors.grey.shade300,
+                                  child: Icon(
+                                    Icons.broken_image_outlined,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: _clearImage,
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Remove photo'),
+                    ),
+                  ] else
+                    OutlinedButton.icon(
+                      onPressed: _pickImage,
+                      icon: const Icon(Icons.add_photo_alternate_outlined),
+                      label: Text(_isEditMode ? 'Change cover photo' : 'Add cover photo'),
+                    ),
+                  const SizedBox(height: 20),
+                  Text('When', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 8),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.play_circle_outline),
+                    title: const Text('Starts'),
+                    subtitle: Text(dateTimeFmt.format(_startsAt.toLocal())),
+                    trailing: const Icon(Icons.edit_calendar_outlined),
+                    onTap: _pickStartsAt,
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.stop_circle_outlined),
+                    title: const Text('Ends'),
+                    subtitle: Text(dateTimeFmt.format(_endsAt.toLocal())),
+                    trailing: const Icon(Icons.edit_calendar_outlined),
+                    onTap: _pickEndsAt,
+                  ),
+                  const SizedBox(height: 12),
+                  Text('City or area', style: theme.textTheme.titleSmall),
+
+                  const SizedBox(height: 8),
+                  if (!_loadingEdit)
+                    CitySearchField(
+                      value: _eventMapLocation,
+                      onChanged: (v) => setState(() => _eventMapLocation = v),
+                      decoration: const InputDecoration(
+                        labelText: 'Search city or neighborhood',
+                        hintText: 'Start typing…',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  const SizedBox(height: 28),
+                  FilledButton(
+                    onPressed: _busy ? null : _save,
+                    child: _busy
+                        ? const SizedBox(
+                            height: 22,
+                            width: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(_isEditMode ? 'Save changes' : 'Publish event'),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+}
+
+String _eventSaveErrorMessage(Object e) {
+  if (e is FirebaseException) {
+    if (e.code == 'permission-denied') {
+      return 'Permission denied saving the event. Deploy the latest Firestore rules '
+          '(events need organizerId, title, description, startsAt, endsAt, etc.).';
+    }
+    final m = e.message?.trim();
+    if (m != null && m.isNotEmpty) return '${e.code}: $m';
+    return e.code;
+  }
+  if (e is TimeoutException) {
+    return e.message?.isNotEmpty == true
+        ? e.message!
+        : 'Timed out. Check your connection and try again.';
+  }
+  return e.toString();
+}
