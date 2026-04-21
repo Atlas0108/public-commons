@@ -633,10 +633,10 @@ class _EventsHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleStyle = GoogleFonts.playfairDisplay(
+    const titleStyle = TextStyle(
+      fontFamily: 'Castelle',
       fontSize: 40,
       fontWeight: FontWeight.w400,
-      fontStyle: FontStyle.italic,
       color: _forest,
       height: 1.08,
     );
