@@ -3,9 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/models/post.dart';
 import '../core/models/post_kind.dart';
+import '../core/models/rsvp.dart';
+import '../core/services/event_service.dart';
+import '../core/utils/link_utils.dart';
 import 'adaptive_post_cover_frame.dart';
 import 'message_poster_button.dart';
 import 'post_author_row.dart';
@@ -214,6 +219,37 @@ class _ExpandedPostCardState extends State<ExpandedPostCard> {
                       ),
                     ],
                   ),
+                  if (post.kind == PostKind.communityEvent && post.startsAt != null) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.schedule, size: 18, color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _formatEventSchedule(post),
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: _bodyColor,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (post.kind == PostKind.communityEvent &&
+                      post.locationDescription != null &&
+                      post.locationDescription!.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.place_outlined, size: 18, color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(child: _LocationBlock(text: post.locationDescription!)),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   Row(
                     children: [
@@ -240,14 +276,24 @@ class _ExpandedPostCardState extends State<ExpandedPostCard> {
                           ),
                     ),
                   ],
+                  if (post.kind == PostKind.communityEvent && user != null) ...[
+                    const SizedBox(height: 28),
+                    Text('RSVP', style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 12),
+                    _RsvpRow(eventId: post.id),
+                  ],
                   if (isAuthor) ...[
                     const SizedBox(height: 32),
                     OutlinedButton(
                       onPressed: () {
                         Navigator.of(context, rootNavigator: true).pop();
-                        context.push('/posts/${post.id}/edit');
+                        if (post.kind == PostKind.communityEvent) {
+                          context.push('/event/${post.id}/edit');
+                        } else {
+                          context.push('/posts/${post.id}/edit');
+                        }
                       },
-                      child: const Text('Edit Post'),
+                      child: Text(post.kind == PostKind.communityEvent ? 'Edit Event' : 'Edit Post'),
                     ),
                   ],
                   const SizedBox(height: 32),
@@ -282,6 +328,141 @@ class _ExpandedPostCardState extends State<ExpandedPostCard> {
           ],
         ),
       ),
+    );
+  }
+
+  String _formatEventSchedule(CommonsPost post) {
+    final start = post.startsAt?.toLocal();
+    if (start == null) return '';
+    final end = post.endsAt?.toLocal();
+    if (end == null) return DateFormat.yMMMd().add_jm().format(start);
+    final sameDay = start.year == end.year && start.month == end.month && start.day == end.day;
+    if (sameDay) {
+      return '${DateFormat.yMMMd().add_jm().format(start)} – ${DateFormat.jm().format(end)}';
+    }
+    return '${DateFormat.yMMMd().add_jm().format(start)} – ${DateFormat.yMMMd().add_jm().format(end)}';
+  }
+}
+
+class _LocationBlock extends StatelessWidget {
+  const _LocationBlock({required this.text});
+
+  final String text;
+
+  Future<void> _open() async {
+    final uri = Uri.parse(text.trim());
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (locationTextLooksLikeHttpUrl(text)) {
+      return InkWell(
+        onTap: _open,
+        child: Text(
+          text.trim(),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.primary,
+            decoration: TextDecoration.underline,
+            decorationColor: theme.colorScheme.primary,
+          ),
+        ),
+      );
+    }
+    return SelectableText(
+      text.trim(),
+      style: theme.textTheme.bodyMedium?.copyWith(
+        color: const Color(0xFF5C6268),
+      ),
+    );
+  }
+}
+
+class _RsvpRow extends StatelessWidget {
+  const _RsvpRow({required this.eventId});
+
+  final String eventId;
+
+  @override
+  Widget build(BuildContext context) {
+    final eventService = context.read<EventService>();
+    return StreamBuilder<EventRsvp?>(
+      stream: eventService.myRsvpStream(eventId),
+      builder: (context, snap) {
+        final current = snap.data?.status;
+        return Row(
+          children: [
+            Expanded(
+              child: _RsvpSegment(
+                label: 'Going',
+                selected: current == RsvpStatus.going,
+                onPressed: () => eventService.setMyRsvp(eventId, RsvpStatus.going),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _RsvpSegment(
+                label: 'Maybe',
+                selected: current == RsvpStatus.maybe,
+                onPressed: () => eventService.setMyRsvp(eventId, RsvpStatus.maybe),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _RsvpSegment(
+                label: "Can't go",
+                selected: current == RsvpStatus.declined,
+                onPressed: () => eventService.setMyRsvp(eventId, RsvpStatus.declined),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _RsvpSegment extends StatelessWidget {
+  const _RsvpSegment({
+    required this.label,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    if (selected) {
+      return FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+          ),
+          minimumSize: const Size(0, 48),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+      );
+    }
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
+        minimumSize: const Size(0, 48),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
     );
   }
 }

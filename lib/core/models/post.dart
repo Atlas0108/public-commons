@@ -22,6 +22,7 @@ class CommonsPost {
     this.endsAt,
     this.locationDescription,
     this.groupId,
+    this.hidden = false,
   });
 
   final String id;
@@ -43,6 +44,8 @@ class CommonsPost {
   final String? locationDescription;
   /// When set, this post belongs to a group feed (not shown on global home/discovery).
   final String? groupId;
+  /// When true, the post is hidden from feeds (auto-moderated due to dislikes).
+  final bool hidden;
 
   /// True when this post is scoped to a group (`posts` with `groupId`).
   bool get isGroupPost {
@@ -67,6 +70,28 @@ class CommonsPost {
     return t.isEmpty ? 'Post' : t;
   }
 
+  /// Creates a [CommonsPost] from a [CommunityEvent] for unified display.
+  static CommonsPost fromEvent(dynamic event) {
+    return CommonsPost(
+      id: event.id as String,
+      authorId: event.organizerId as String,
+      authorName: (event.organizerName as String).trim().isNotEmpty
+          ? (event.organizerName as String).trim()
+          : 'Organizer',
+      kind: PostKind.communityEvent,
+      title: event.title as String,
+      body: event.description as String?,
+      imageUrl: event.imageUrl as String?,
+      geoPoint: event.geoPoint as GeoPoint,
+      geohash: event.geohash as String,
+      status: PostStatus.open,
+      createdAt: event.createdAt as DateTime,
+      startsAt: event.startsAt as DateTime?,
+      endsAt: event.endsAt as DateTime?,
+      locationDescription: event.locationDescription as String?,
+    );
+  }
+
   static CommonsPost? fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
     if (data == null) return null;
@@ -79,6 +104,7 @@ class CommonsPost {
     final endsAt = (data['endsAt'] as Timestamp?)?.toDate();
     final loc = (data['locationDescription'] as String?)?.trim();
     final gid = (data['groupId'] as String?)?.trim();
+    final hidden = data['hidden'] as bool? ?? false;
     return CommonsPost(
       id: doc.id,
       authorId: data['authorId'] as String? ?? '',
@@ -96,6 +122,7 @@ class CommonsPost {
       endsAt: endsAt,
       locationDescription: loc != null && loc.isNotEmpty ? loc : null,
       groupId: gid != null && gid.isNotEmpty ? gid : null,
+      hidden: hidden,
     );
   }
 

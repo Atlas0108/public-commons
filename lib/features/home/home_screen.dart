@@ -2,7 +2,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
 
@@ -231,31 +230,24 @@ List<_FeedEntry> _buildFeedEntries(
   required bool postWaiting,
 }) {
   final entries = <_FeedEntry>[];
+  // Convert legacy events to posts and use the same card
   for (var i = 0; i < events.length; i++) {
+    final post = CommonsPost.fromEvent(events[i]);
     entries.add(
       _FeedEntry(
-        at: events[i].createdAt,
-        card: _EventFeedCard(event: events[i]),
+        at: post.createdAt,
+        card: _PostFeedCard(post: post),
         kind: _FeedEntryKind.event,
       ),
     );
   }
   for (var i = 0; i < posts.length; i++) {
     final p = posts[i];
-    if (p.kind == PostKind.communityEvent) {
-      final e = CommunityEvent.fromCommonsPost(p);
-      if (e != null) {
-        entries.add(
-          _FeedEntry(
-            at: p.createdAt,
-            card: _EventFeedCard(event: e),
-            kind: _FeedEntryKind.event,
-          ),
-        );
-      }
-      continue;
-    }
-    final kind = p.kind == PostKind.helpOffer ? _FeedEntryKind.offer : _FeedEntryKind.request;
+    final kind = switch (p.kind) {
+      PostKind.communityEvent => _FeedEntryKind.event,
+      PostKind.helpOffer => _FeedEntryKind.offer,
+      _ => _FeedEntryKind.request,
+    };
     entries.add(
       _FeedEntry(
         at: p.createdAt,
@@ -629,22 +621,28 @@ class _EventsHero extends StatelessWidget {
   final VoidCallback onMakePost;
 
   static const _forest = Color(0xFF4A6354);
+  static const _commons = Color(0xFF2E2D4D);
   static const _descriptionColor = Color(0xFF4A4F54);
 
   @override
   Widget build(BuildContext context) {
-    const titleStyle = TextStyle(
-      fontFamily: 'Castelle',
-      fontSize: 40,
-      fontWeight: FontWeight.w400,
-      color: _forest,
-      height: 1.08,
-    );
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Public Commons', style: titleStyle),
+        Text.rich(
+          TextSpan(
+            style: const TextStyle(
+              fontFamily: 'Castelle',
+              fontSize: 40,
+              fontWeight: FontWeight.w400,
+              height: 1.08,
+            ),
+            children: [
+              TextSpan(text: 'Public ', style: TextStyle(color: _forest)),
+              TextSpan(text: 'Commons', style: TextStyle(color: _commons)),
+            ],
+          ),
+        ),
         const SizedBox(height: 16),
         Text(
           'A platform designed to nourish the soul, tend to our communities, and strengthen our collective roots.',
@@ -683,212 +681,6 @@ class _EventsHero extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _EventFeedCard extends StatelessWidget {
-  const _EventFeedCard({required this.event});
-
-  final CommunityEvent event;
-
-  static const _categoryColor = Color(0xFF6B7B8C);
-  static const _forestCategory = Color(0xFF4A6354);
-  static const _arrowColor = Color(0xFF8E9499);
-  static const _bodyColor = Color(0xFF5C6268);
-  static const _metaGrey = Color(0xFF5C6268);
-
-  /// Soft peach-cream (former random palette option) for the date tile only.
-  static const _eventDateBadgeBg = kHomeEventDateBadgeBackground;
-
-  /// Same pattern as [_PostFeedCard._kindHeadline]: fixed kind above the title.
-  String get _kindHeadline => 'EVENT';
-
-  String _descriptionPreview() {
-    final d = event.description.trim().replaceAll(RegExp(r'\s+'), ' ');
-    if (d.isNotEmpty) return d;
-    final loc = event.locationDescription.trim();
-    if (loc.isNotEmpty) return loc;
-    return 'Tap for details and schedule.';
-  }
-
-  bool get _hasImage => event.imageUrl != null && event.imageUrl!.trim().isNotEmpty;
-
-  @override
-  Widget build(BuildContext context) {
-    if (_hasImage) {
-      return _buildImageHeroCard(context);
-    }
-    final start = event.startsAt.toLocal();
-    final month = DateFormat('MMM').format(start).toUpperCase();
-    final day = DateFormat('d').format(start);
-
-    return _feedCardWithSave(
-      event.id,
-      _EditorialCard(
-        onTap: () => context.push('/event/${event.id}'),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _DateBadge(month: month, day: day, backgroundColor: _eventDateBadgeBg),
-                const Padding(
-                  padding: EdgeInsets.only(top: 6),
-                  child: Icon(Icons.arrow_forward, size: 22, color: _arrowColor),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Text(
-              _kindHeadline,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: _categoryColor,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.1,
-                fontSize: 11,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              event.title,
-              style: GoogleFonts.lora(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
-                height: 1.25,
-                color: const Color(0xFF141414),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              _descriptionPreview(),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: _bodyColor, height: 1.45),
-            ),
-            const SizedBox(height: 20),
-            PostAuthorTapRow(
-              authorId: event.organizerId,
-              authorName: event.organizerName.trim().isNotEmpty
-                  ? event.organizerName.trim()
-                  : 'Organizer',
-              prefix: 'Led by ',
-              enableProfileTap: false,
-            ),
-          ],
-        ),
-      ),
-      onCommentTap: () => context.push('/event/${event.id}'),
-    );
-  }
-
-  Widget _buildImageHeroCard(BuildContext context) {
-    final url = event.imageUrl!.trim();
-    final timeText = DateFormat.jm().format(event.startsAt.toLocal());
-    final host = event.organizerName.trim().isNotEmpty ? event.organizerName.trim() : 'Organizer';
-
-    return _feedCardWithSave(
-      event.id,
-      _EditorialCard(
-        onTap: () => context.push('/event/${event.id}'),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: AdaptivePostCoverFrame(
-                child: Image.network(
-                  url,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) return child;
-                    return ColoredBox(
-                      color: Colors.grey.shade200,
-                      child: Center(
-                        child: SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                  errorBuilder: (_, __, ___) => ColoredBox(
-                    color: Colors.grey.shade300,
-                    child: Icon(Icons.broken_image_outlined, color: Colors.grey.shade600, size: 48),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    _kindHeadline,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: _forestCategory,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.9,
-                      fontSize: 11,
-                    ),
-                  ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.schedule, size: 16, color: _metaGrey.withValues(alpha: 0.9)),
-                    const SizedBox(width: 4),
-                    Text(
-                      timeText,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: _metaGrey,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              event.title,
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 26,
-                fontWeight: FontWeight.w500,
-                height: 1.2,
-                color: const Color(0xFF141414),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              _descriptionPreview(),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: _bodyColor, height: 1.5, fontSize: 15),
-            ),
-            const SizedBox(height: 20),
-            PostAuthorTapRow(
-              authorId: event.organizerId,
-              authorName: host,
-              prefix: 'Led by ',
-              enableProfileTap: false,
-            ),
-          ],
-        ),
-      ),
-      onCommentTap: () => context.push('/event/${event.id}'),
     );
   }
 }
@@ -994,11 +786,7 @@ class _PostFeedCard extends StatelessWidget {
   bool get _hasImage => post.imageUrl != null && post.imageUrl!.trim().isNotEmpty;
 
   void _openDetail(BuildContext context) {
-    if (post.kind == PostKind.communityEvent) {
-      context.push('/event/${post.id}');
-    } else {
-      openExpandedPostCard(context, post);
-    }
+    openExpandedPostCard(context, post);
   }
 
   @override
@@ -1083,11 +871,7 @@ class _PostFeedCard extends StatelessWidget {
   }
 
   void _openCommentDetail(BuildContext context) {
-    if (post.kind == PostKind.communityEvent) {
-      context.push('/event/${post.id}');
-    } else {
-      openExpandedPostCard(context, post, focusComments: true);
-    }
+    openExpandedPostCard(context, post, focusComments: true);
   }
 
   Widget _buildImageHeroCard(BuildContext context) {
@@ -1196,39 +980,6 @@ class _PostFeedCard extends StatelessWidget {
         ),
       ),
       onCommentTap: () => _openCommentDetail(context),
-    );
-  }
-}
-
-class _DateBadge extends StatelessWidget {
-  const _DateBadge({required this.month, required this.day, required this.backgroundColor});
-
-  final String month;
-  final String day;
-  final Color backgroundColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(color: backgroundColor, borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Column(
-          children: [
-            Text(
-              month,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.9,
-                height: 1,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(day, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, height: 1)),
-          ],
-        ),
-      ),
     );
   }
 }
