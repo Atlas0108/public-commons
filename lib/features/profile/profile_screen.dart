@@ -16,6 +16,7 @@ import '../../core/models/post.dart';
 import '../../core/models/post_kind.dart';
 import '../../core/models/user_account_type.dart';
 import '../../core/models/user_profile.dart';
+import '../../core/models/group.dart';
 import '../../core/services/group_service.dart';
 import '../../core/services/post_service.dart';
 import '../../core/services/connection_service.dart';
@@ -255,12 +256,28 @@ class _ProfileIdentityPinnedDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
-class _ProfileBodyState extends State<_ProfileBody> {
+class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderStateMixin {
   bool _uploadingPhoto = false;
   /// True once the user has scrolled past the avatar so the identity header is pinned.
   bool _identityHeaderStuck = false;
+  late TabController _tabController;
 
   UserProfile get profile => widget.profile;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   /// Matches [SliverPadding] top (20) + avatar (128) + gap before pinned header (20).
   static const double _identityStickScrollThreshold = 20 + 128 + 20;
@@ -410,13 +427,6 @@ class _ProfileBodyState extends State<_ProfileBody> {
     );
   }
 
-  Future<void> _signOut(BuildContext context) async {
-    context.read<AuthRedirect>().clear();
-    await FirebaseAuth.instance.signOut();
-    if (!context.mounted) return;
-    context.go('/sign-in');
-  }
-
   Widget _buildAvatarStack(String headerName) {
     return SizedBox(
       width: 128,
@@ -491,6 +501,193 @@ class _ProfileBodyState extends State<_ProfileBody> {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTabContent(BuildContext context, ThemeData theme) {
+    switch (_tabController.index) {
+      case 0:
+        return _buildPostsTab(context, theme);
+      case 1:
+        return _buildGroupsTab(context, theme);
+      case 2:
+        return _buildConnectionsTab(context, theme);
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Widget _buildPostsTab(BuildContext context, ThemeData theme) {
+    return StreamBuilder<List<CommonsPost>>(
+      stream: context.read<PostService>().postsByAuthorId(profile.uid),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final posts = snap.data ?? [];
+        if (posts.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              'No posts yet.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: _slateSubtitle),
+            ),
+          );
+        }
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < posts.length; i++)
+              Padding(
+                padding: EdgeInsets.only(bottom: i < posts.length - 1 ? 12 : 0),
+                child: _ProfileAuthorPostCard(post: posts[i]),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildGroupsTab(BuildContext context, ThemeData theme) {
+    return StreamBuilder(
+      stream: context.read<GroupService>().myGroupsStream(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final groups = snap.data ?? [];
+        if (groups.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Column(
+              children: [
+                Text(
+                  'No groups yet.',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: _slateSubtitle),
+                ),
+                if (widget.isAuthUserDoc && !widget.actingAsOrganization) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: () => context.push('/groups/manage'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _headerGreen,
+                      side: const BorderSide(color: _headerGreen),
+                    ),
+                    child: const Text('Create or manage groups'),
+                  ),
+                ],
+              ],
+            ),
+          );
+        }
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < groups.length; i++)
+              Padding(
+                padding: EdgeInsets.only(bottom: i < groups.length - 1 ? 12 : 0),
+                child: _GroupListTile(group: groups[i]),
+              ),
+            if (widget.isAuthUserDoc && !widget.actingAsOrganization) ...[
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () => context.push('/groups/manage'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _headerGreen,
+                  side: const BorderSide(color: _headerGreen),
+                ),
+                child: const Text('Manage groups'),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildConnectionsTab(BuildContext context, ThemeData theme) {
+    final svc = context.read<ConnectionService>();
+    final tappable = widget.isAuthUserDoc && !widget.actingAsOrganization;
+    
+    return StreamBuilder<int>(
+      stream: svc.connectionCountStream(profile.uid),
+      builder: (context, snap) {
+        final n = snap.data ?? 0;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 6)),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$n',
+                          style: GoogleFonts.playfairDisplay(
+                            fontSize: 40,
+                            fontWeight: FontWeight.w700,
+                            color: _headerGreen,
+                            height: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'CONNECTIONS',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            letterSpacing: 0.8,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF6B6B6B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (tappable)
+                    StreamBuilder<int>(
+                      stream: svc.incomingRequestCountStream(),
+                      builder: (context, pendingSnap) {
+                        final pending = pendingSnap.data ?? 0;
+                        if (pending <= 0) return const SizedBox.shrink();
+                        return PendingConnectionRequestsBadge(count: pending);
+                      },
+                    ),
+                ],
+              ),
+            ),
+            if (tappable) ...[
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: () => context.push('/connections'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _headerGreen,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Manage connections'),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
@@ -632,27 +829,6 @@ class _ProfileBodyState extends State<_ProfileBody> {
                         otherUid: profile.uid,
                         otherDisplayName: profile.publicDisplayLabel,
                       ),
-                    const SizedBox(height: 28),
-                    _ConnectionsMetricCard(
-                      userId: profile.uid,
-                      tappable: widget.isAuthUserDoc && !widget.actingAsOrganization,
-                    ),
-                    const SizedBox(height: 16),
-                    _ProfileMetricCard(
-                      value: '${profile.eventsAttended}',
-                      label: 'EVENTS ATTENDED',
-                      valueColor: _headerGreen,
-                    ),
-                    const SizedBox(height: 16),
-                    _ProfileMetricCard(
-                      value: '${profile.requestsFulfilled}',
-                      label: 'REQUESTS FULFILLED',
-                      valueColor: _statBlue,
-                    ),
-                    if (widget.isAuthUserDoc && !widget.actingAsOrganization) ...[
-                      const SizedBox(height: 16),
-                      const _GroupsProfileCard(),
-                    ],
                     if (widget.isAuthUserDoc &&
                         !widget.actingAsOrganization &&
                         (profile.accountType == UserAccountType.nonprofit ||
@@ -663,60 +839,43 @@ class _ProfileBodyState extends State<_ProfileBody> {
                       ),
                     ],
                     const SizedBox(height: 24),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Posts',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: _slateSubtitle,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    StreamBuilder<List<CommonsPost>>(
-                      stream: context.read<PostService>().postsByAuthorId(profile.uid),
-                      builder: (context, snap) {
-                        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
-                          return const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 24),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-                        final posts = snap.data ?? [];
-                        if (posts.isEmpty) {
-                          return Text(
-                            'No posts yet.',
-                            style: theme.textTheme.bodyMedium?.copyWith(color: _slateSubtitle),
-                          );
-                        }
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            for (var i = 0; i < posts.length; i++)
-                              Padding(
-                                padding: EdgeInsets.only(bottom: i < posts.length - 1 ? 12 : 0),
-                                child: _ProfileAuthorPostCard(post: posts[i]),
-                              ),
-                          ],
-                        );
-                      },
-                    ),
-                    if (widget.fromProfileTab) ...[
-                      const SizedBox(height: 24),
-                      TextButton.icon(
-                        onPressed: () => _signOut(context),
-                        icon: Icon(Icons.logout, size: 20, color: _slateSubtitle),
-                        label: Text(
-                          'Log out',
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: _slateSubtitle,
-                            fontWeight: FontWeight.w600,
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x0A000000),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                      child: TabBar(
+                        controller: _tabController,
+                        labelColor: _headerGreen,
+                        unselectedLabelColor: _slateSubtitle,
+                        indicatorColor: _headerGreen,
+                        indicatorWeight: 3,
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        dividerColor: Colors.transparent,
+                        labelStyle: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                        unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 0.5,
+                        ),
+                        tabs: const [
+                          Tab(text: 'Posts'),
+                          Tab(text: 'Groups'),
+                          Tab(text: 'Connections'),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTabContent(context, theme),
                   ],
                 ),
               ),
@@ -839,74 +998,75 @@ class _ProfileAuthorPostCard extends StatelessWidget {
   }
 }
 
-/// Opens the Create tab on “My content” (posts, events, groups).
-class _GroupsProfileCard extends StatelessWidget {
-  const _GroupsProfileCard();
+class _GroupListTile extends StatelessWidget {
+  const _GroupListTile({required this.group});
+
+  final CommonsGroup group;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return StreamBuilder(
-      stream: context.read<GroupService>().myGroupsStream(),
-      builder: (context, snap) {
-        final n = snap.data?.length ?? 0;
-        final subtitle = n == 0
-            ? 'Create and invite neighbors to groups'
-            : '$n ${n == 1 ? 'group' : 'groups'} — tap to manage';
+    final memberCount = group.memberIds.length;
 
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => context.push('/groups/manage'),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => context.push('/groups/${group.id}'),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x14000000),
-                    blurRadius: 10,
-                    offset: Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.diversity_3_outlined, color: _statBlue, size: 28),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'GROUPS',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            letterSpacing: 1.2,
-                            fontWeight: FontWeight.w700,
-                            color: _slateSubtitle,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          subtitle,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurface,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.chevron_right, color: _slateSubtitle),
-                ],
-              ),
-            ),
+            boxShadow: const [
+              BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 6)),
+            ],
           ),
-        );
-      },
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F5E9),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.diversity_3_outlined,
+                  color: _headerGreen,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      group.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF141414),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$memberCount ${memberCount == 1 ? 'member' : 'members'}${group.isPublic ? '' : ' • Private'}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: _slateSubtitle,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: _slateSubtitle, size: 20),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1282,38 +1442,68 @@ class _ProfileEditSheetState extends State<_ProfileEditSheet> {
                 if (at == UserAccountType.personal) ...[
                   TextField(
                     controller: _firstName,
-                    decoration: const InputDecoration(labelText: 'First name'),
                     textCapitalization: TextCapitalization.words,
+                    decoration: InputDecoration(
+                      hintText: 'First name',
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _lastName,
-                    decoration: const InputDecoration(labelText: 'Last name'),
                     textCapitalization: TextCapitalization.words,
+                    decoration: InputDecoration(
+                      hintText: 'Last name',
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    ),
                   ),
                 ] else ...[
                   TextField(
                     controller: _entityName,
+                    textCapitalization: TextCapitalization.words,
                     decoration: InputDecoration(
-                      labelText: at == UserAccountType.nonprofit
+                      hintText: at == UserAccountType.nonprofit
                           ? 'Organization name'
                           : 'Business name',
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     ),
-                    textCapitalization: TextCapitalization.words,
                   ),
                 ],
                 const SizedBox(height: 12),
                 TextField(
                   controller: _bio,
-                  decoration: const InputDecoration(
-                    labelText: 'Bio',
-                    hintText: 'A few words about you…',
-                    alignLabelWithHint: true,
-                  ),
                   maxLines: 5,
                   minLines: 3,
                   maxLength: UserProfileService.maxBioLength,
                   textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    hintText: 'A few words about you…',
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
@@ -1340,11 +1530,33 @@ class _ProfileEditSheetState extends State<_ProfileEditSheet> {
                   ),
                   child: const Text('Save'),
                 ),
+                const SizedBox(height: 32),
+                const Divider(),
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: () => _signOut(context),
+                  icon: Icon(Icons.logout, size: 20, color: _slateSubtitle),
+                  label: Text(
+                    'Log out',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: _slateSubtitle,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               ],
             );
           },
         ),
       ),
     );
+  }
+
+  Future<void> _signOut(BuildContext context) async {
+    Navigator.of(context).pop();
+    context.read<AuthRedirect>().clear();
+    await FirebaseAuth.instance.signOut();
+    if (!context.mounted) return;
+    context.go('/sign-in');
   }
 }
