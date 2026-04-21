@@ -1,5 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -14,7 +17,7 @@ import '../../core/services/connection_service.dart';
 import '../../core/services/group_service.dart';
 import '../../core/services/post_service.dart';
 import '../../core/services/user_profile_service.dart';
-import '../../widgets/close_to_shell.dart';
+import '../../widgets/close_to_shell.dart' show CloseToShellIconButton, popOrGoHome;
 
 class GroupDetailScreen extends StatelessWidget {
   const GroupDetailScreen({super.key, required this.groupId});
@@ -83,10 +86,65 @@ class GroupDetailScreen extends StatelessWidget {
         final isOwner = user?.uid == g.ownerId;
         final isMember = user != null && g.isMember(user.uid);
 
+        final showOverflowMenu = isOwner || (isMember && !isOwner);
+
         return Scaffold(
           appBar: AppBar(
-            title: Text(g.name),
-            actions: const [CloseToShellIconButton()],
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              tooltip: 'Back',
+              onPressed: () => popOrGoHome(context),
+            ),
+            title: const SizedBox.shrink(),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.share_outlined),
+                tooltip: 'Copy link',
+                onPressed: () => _copyGroupUrl(g.id),
+              ),
+              if (showOverflowMenu)
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'manage':
+                        _openEditGroupSheet(context, g);
+                        break;
+                      case 'invite':
+                        _openInviteSheet(context, g);
+                        break;
+                      case 'leave':
+                        _confirmLeave(context, g.id);
+                        break;
+                    }
+                  },
+                  itemBuilder: (ctx) {
+                    final items = <PopupMenuEntry<String>>[];
+                    if (isOwner) {
+                      items.add(
+                        const PopupMenuItem(
+                          value: 'manage',
+                          child: Text('Manage Group'),
+                        ),
+                      );
+                      items.add(
+                        const PopupMenuItem(
+                          value: 'invite',
+                          child: Text('Invite connections'),
+                        ),
+                      );
+                    } else if (isMember) {
+                      items.add(
+                        const PopupMenuItem(
+                          value: 'leave',
+                          child: Text('Leave group'),
+                        ),
+                      );
+                    }
+                    return items;
+                  },
+                ),
+            ],
           ),
           floatingActionButton: isMember
               ? FloatingActionButton.extended(
@@ -96,64 +154,31 @@ class GroupDetailScreen extends StatelessWidget {
                 )
               : null,
           body: ListView(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 100),
+            padding: const EdgeInsets.only(bottom: 100),
             children: [
-              Text('Visibility', style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Chip(
-                  avatar: Icon(
-                    g.isPublic ? Icons.public : Icons.lock,
-                    size: 18,
-                  ),
-                  label: Text(g.isPublic ? 'Public' : 'Private'),
+              _GroupProfileSummary(
+                group: g,
+                onRules: () => _openRulesSheet(context, g),
+                onMembers: () => _openMembersSheet(context, g),
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Activity',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.2,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    _GroupPostFeedSection(groupId: g.id),
+                  ],
                 ),
               ),
-              if (g.description.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                Text('About', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                Text(g.description, style: Theme.of(context).textTheme.bodyLarge),
-              ],
-              if (g.rules.isNotEmpty) ...[
-                const SizedBox(height: 24),
-                Text('Rules', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                SelectableText(
-                  g.rules,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.45),
-                ),
-              ],
-              const SizedBox(height: 24),
-              Text('Group posts', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              _GroupPostFeedSection(groupId: g.id),
-              const SizedBox(height: 28),
-              Text('Members (${g.memberIds.length})', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              ...g.memberIds.map((uid) => _MemberRow(userId: uid, isOwner: uid == g.ownerId)),
-              if (isOwner) ...[
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: () => _openInviteSheet(context, g),
-                  icon: const Icon(Icons.person_add_outlined),
-                  label: const Text('Invite connections'),
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: () => _openEditGroupSheet(context, g),
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('Edit group'),
-                ),
-              ],
-              if (isMember && !isOwner) ...[
-                const SizedBox(height: 24),
-                TextButton(
-                  onPressed: () => _confirmLeave(context, g.id),
-                  child: const Text('Leave group'),
-                ),
-              ],
             ],
           ),
         );
@@ -211,6 +236,109 @@ class GroupDetailScreen extends StatelessWidget {
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  String _buildGroupShareUrl(String groupId) {
+    final path = '/groups/$groupId';
+    if (kIsWeb) {
+      return Uri.base.resolve(path).toString();
+    }
+    final raw = dotenv.env['APP_PUBLIC_URL']?.trim();
+    if (raw != null && raw.isNotEmpty) {
+      final base = raw.replaceAll(RegExp(r'/+$'), '');
+      return '$base$path';
+    }
+    return 'https://publiccommons.app$path';
+  }
+
+  Future<void> _copyGroupUrl(String groupId) async {
+    final url = _buildGroupShareUrl(groupId);
+    await Clipboard.setData(ClipboardData(text: url));
+    appScaffoldMessengerKey.currentState?.showSnackBar(
+      const SnackBar(content: Text('Group link copied to clipboard')),
+    );
+  }
+
+  Future<void> _openRulesSheet(BuildContext context, CommonsGroup g) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 24,
+            right: 24,
+            top: 8,
+            bottom: MediaQuery.viewInsetsOf(ctx).bottom + 24,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Rules', style: Theme.of(ctx).textTheme.titleLarge),
+                const SizedBox(height: 12),
+                if (g.rules.trim().isEmpty)
+                  Text(
+                    'This group has not posted rules yet.',
+                    style: Theme.of(ctx).textTheme.bodyLarge?.copyWith(
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                          height: 1.45,
+                        ),
+                  )
+                else
+                  SelectableText(
+                    g.rules,
+                    style: Theme.of(ctx).textTheme.bodyLarge?.copyWith(height: 1.45),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openMembersSheet(BuildContext context, CommonsGroup g) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.52,
+          minChildSize: 0.32,
+          maxChildSize: 0.88,
+          builder: (context, scrollController) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
+                  child: Text(
+                    'Members · ${g.memberIds.length}',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
+                    itemCount: g.memberIds.length,
+                    itemBuilder: (context, i) {
+                      final uid = g.memberIds[i];
+                      return _MemberRow(userId: uid, isOwner: uid == g.ownerId);
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -436,6 +564,135 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
   }
 }
 
+class _GroupProfileSummary extends StatelessWidget {
+  const _GroupProfileSummary({
+    required this.group,
+    required this.onRules,
+    required this.onMembers,
+  });
+
+  final CommonsGroup group;
+  final VoidCallback onRules;
+  final VoidCallback onMembers;
+
+  String _titleInitial() {
+    final t = group.name.trim();
+    if (t.isEmpty) return '?';
+    return t.substring(0, 1).toUpperCase();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final n = group.memberIds.length;
+    final memberLine = n == 1 ? '1 member' : '$n members';
+    final visibility = group.isPublic ? 'Public' : 'Private';
+
+    final linkStyle = tt.labelLarge?.copyWith(
+      color: cs.primary,
+      fontWeight: FontWeight.w600,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 28,
+                backgroundColor: cs.primaryContainer,
+                foregroundColor: cs.onPrimaryContainer,
+                child: Text(
+                  _titleInitial(),
+                  style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      group.name,
+                      style: tt.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                        letterSpacing: -0.35,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '$memberLine · $visibility',
+                      style: tt.bodyMedium?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (group.description.trim().isNotEmpty)
+            Text(
+              group.description.trim(),
+              style: tt.bodyLarge?.copyWith(height: 1.45),
+            )
+          else
+            Text(
+              'No description yet.',
+              style: tt.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          const SizedBox(height: 14),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              TextButton(
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: cs.primary,
+                ),
+                onPressed: onRules,
+                child: Text('Rules', style: linkStyle),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  '|',
+                  style: tt.bodyMedium?.copyWith(
+                    color: cs.outline,
+                    fontWeight: FontWeight.w300,
+                  ),
+                ),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: cs.primary,
+                ),
+                onPressed: onMembers,
+                child: Text('Members', style: linkStyle),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _GroupPostFeedSection extends StatelessWidget {
   const _GroupPostFeedSection({required this.groupId});
 
@@ -469,39 +726,52 @@ class _GroupPostFeedSection extends StatelessWidget {
           );
         }
         final posts = snap.data ?? [];
+        final cs = Theme.of(context).colorScheme;
         if (posts.isEmpty) {
-          return Text(
-            'No posts yet. Tap Post to add an event, help post, or bulletin.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerLow.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.45)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
+              child: Column(
+                children: [
+                  Icon(Icons.forum_outlined, size: 40, color: cs.outline),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No posts yet',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tap Post to share an event, offer, request, or bulletin.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          height: 1.35,
+                        ),
+                  ),
+                ],
+              ),
+            ),
           );
         }
         return Column(
           children: [
             for (final p in posts)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Card(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Material(
+                  color: cs.surfaceContainerLow,
+                  elevation: 0,
+                  shadowColor: Colors.transparent,
+                  borderRadius: BorderRadius.circular(18),
                   clipBehavior: Clip.antiAlias,
-                  child: ListTile(
-                    leading: Icon(
-                      p.kind == PostKind.communityEvent
-                          ? Icons.event_outlined
-                          : p.kind == PostKind.bulletin
-                              ? Icons.campaign_outlined
-                              : p.kind == PostKind.helpOffer
-                                  ? Icons.handshake_outlined
-                                  : Icons.support_agent_outlined,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    title: Text(p.displayTitleLine, maxLines: 3, overflow: TextOverflow.ellipsis),
-                    subtitle: Text(
-                      '${_kindLabel(p.kind)} · ${fmt.format(p.createdAt.toLocal())}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
+                  child: InkWell(
                     onTap: () {
                       if (p.kind == PostKind.communityEvent) {
                         context.push('/event/${p.id}');
@@ -509,6 +779,64 @@ class _GroupPostFeedSection extends StatelessWidget {
                         context.push('/posts/${p.id}');
                       }
                     },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: cs.primaryContainer.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(10),
+                              child: Icon(
+                                p.kind == PostKind.communityEvent
+                                    ? Icons.event_available_outlined
+                                    : p.kind == PostKind.bulletin
+                                        ? Icons.campaign_outlined
+                                        : p.kind == PostKind.helpOffer
+                                            ? Icons.handshake_outlined
+                                            : Icons.support_agent_outlined,
+                                color: cs.onPrimaryContainer,
+                                size: 22,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  p.displayTitleLine,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        height: 1.25,
+                                      ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  '${_kindLabel(p.kind)} · ${fmt.format(p.createdAt.toLocal())}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4, top: 2),
+                            child: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
