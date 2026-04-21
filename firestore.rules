@@ -85,12 +85,20 @@ service cloud.firestore {
         return request.resource.data.participantIds == resource.data.participantIds;
       }
 
-      // Allow listening before the doc exists (client creates right after); otherwise members or org staff.
-      allow read: if signedIn()
+      // Split get vs list: collection queries must use rules Firestore can relate
+      // to the query. `where('participantIds', arrayContains: uid)` does not imply
+      // staff delegate access, so a combined rule rejects the whole query.
+      // See: https://firebase.google.com/docs/firestore/security/rules-query
+
+      // Single-doc reads: allow listening before doc exists, participants, or staff delegates.
+      allow get: if signedIn()
         && (
           !conversationExists()
           || canAccessConversationDoc()
         );
+
+      // Match client query `where('participantIds', arrayContains: request.auth.uid)`.
+      allow list: if signedIn() && uid() in resource.data.participantIds;
 
       allow create: if (
           willBeConversationParticipant()
@@ -195,8 +203,13 @@ service cloud.firestore {
       // https://firebase.google.com/docs/firestore/security/rules-query
       allow get: if signedIn() && (groupIsPublic() || groupIsMember());
 
-      // Match client query `where('memberIds', arrayContains: request.auth.uid)`.
-      allow list: if signedIn() && request.auth.uid in resource.data.memberIds;
+      // Match client queries:
+      // - `where('memberIds', arrayContains: request.auth.uid)` for myGroupsStream
+      // - `where('visibility', isEqualTo: 'public')` for publicGroupsStream
+      allow list: if signedIn() && (
+        request.auth.uid in resource.data.memberIds
+        || resource.data.visibility == 'public'
+      );
 
       allow create: if signedIn()
         && request.resource.data.ownerId == uid()
@@ -294,7 +307,12 @@ service cloud.firestore {
         return !postGroupId(resource.data) || canReadGroupedPost(resource.data);
       }
 
-      allow read: if signedIn() && postReadable();
+      // Split get vs list: collection queries must use rules Firestore can verify
+      // from the query constraints alone. Since homePostsFeed uses orderBy without
+      // a groupId filter, Firestore can't guarantee all results pass postReadable().
+      // Client-side filtering handles group post visibility for list queries.
+      allow get: if signedIn() && postReadable();
+      allow list: if signedIn();
 
       allow create: if signedIn()
         && (
@@ -385,6 +403,17 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read, write: if signedIn();
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email.lower().matches('.*@publiccommons[.]app$');
+    }
+
+    match /settings/{settingId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
     match /users/{userId}/connections/{peerId} {

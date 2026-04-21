@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -8,10 +9,12 @@ import '../../core/constants/default_geo.dart';
 import '../../core/geo/geo_utils.dart';
 import '../../core/app_trace.dart';
 import '../../core/models/community_event.dart';
+import '../../core/models/group.dart';
 import '../../core/models/post.dart';
 import '../../core/models/post_kind.dart';
 import '../../core/models/user_profile.dart';
 import '../../core/services/event_service.dart';
+import '../../core/services/group_service.dart';
 import '../../core/services/post_service.dart';
 import '../../core/services/user_profile_service.dart';
 import 'feed_browse_location_sheet.dart';
@@ -35,7 +38,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   void _openFeedBrowseSheet(BuildContext context, UserProfile profile) {
@@ -86,13 +89,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 return StreamBuilder<List<CommonsPost>>(
                   stream: context.read<PostService>().homePostsFeed(),
                   builder: (context, postSnap) {
+                    return StreamBuilder<List<CommonsGroup>>(
+                      stream: context.read<GroupService>().publicGroupsStream(),
+                      builder: (context, groupSnap) {
                     final postWaiting =
                         !postSnap.hasData && postSnap.connectionState == ConnectionState.waiting;
 
-                    if (eventSnap.hasError || postSnap.hasError) {
+                    if (eventSnap.hasError || postSnap.hasError || groupSnap.hasError) {
                       commonsTrace(
                         'HomeScreen feed error',
-                        '${eventSnap.error ?? ''} ${postSnap.error ?? ''}'.trim(),
+                        '${eventSnap.error ?? ''} ${postSnap.error ?? ''} ${groupSnap.error ?? ''}'.trim(),
                       );
                       return ColoredBox(
                         color: _pageBackground,
@@ -103,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             const SizedBox(height: 24),
                             Text(
                               'Could not load the feed.\n'
-                              '${eventSnap.error ?? postSnap.error}',
+                              '${eventSnap.error ?? postSnap.error ?? groupSnap.error}',
                               textAlign: TextAlign.center,
                             ),
                           ],
@@ -113,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
                     final rawEvents = eventSnap.data ?? [];
                     final rawPosts = postSnap.data ?? [];
+                    final rawGroups = groupSnap.data ?? [];
                     final events = rawEvents
                         .where((e) => withinRadiusMiles(browseCenter, e.geoPoint, radiusMiles))
                         .toList();
@@ -120,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         .where((p) => !p.isGroupPost)
                         .where((p) => withinRadiusMiles(browseCenter, p.geoPoint, radiusMiles))
                         .toList();
-                    final entries = _buildFeedEntries(context, events, posts, postWaiting: postWaiting);
+                    final entries = _buildFeedEntries(context, events, posts, rawGroups, postWaiting: postWaiting);
 
                     return NestedScrollView(
                       headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
@@ -163,8 +170,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       },
                       body: TabBarView(
                         controller: _tabController,
+                        physics: kIsWeb ? const NeverScrollableScrollPhysics() : null,
                         children: [
-                          for (var t = 0; t < 4; t++)
+                          for (var t = 0; t < 5; t++)
                             _HomeFeedTabScrollView(
                               tabIndex: t,
                               entries: entries,
@@ -172,6 +180,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             ),
                         ],
                       ),
+                    );
+                      },
                     );
                   },
                 );
@@ -184,7 +194,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 }
 
-enum _FeedEntryKind { event, offer, request, skeleton }
+enum _FeedEntryKind { event, offer, request, group, skeleton }
 
 class _FeedEntry {
   _FeedEntry({required this.at, required this.card, required this.kind});
@@ -197,7 +207,8 @@ class _FeedEntry {
 List<_FeedEntry> _buildFeedEntries(
   BuildContext context,
   List<CommunityEvent> events,
-  List<CommonsPost> posts, {
+  List<CommonsPost> posts,
+  List<CommonsGroup> groups, {
   required bool postWaiting,
 }) {
   final entries = <_FeedEntry>[];
@@ -227,6 +238,16 @@ List<_FeedEntry> _buildFeedEntries(
       ),
     );
   }
+  for (var i = 0; i < groups.length; i++) {
+    final g = groups[i];
+    entries.add(
+      _FeedEntry(
+        at: g.createdAt,
+        card: _GroupFeedCard(group: g),
+        kind: _FeedEntryKind.group,
+      ),
+    );
+  }
   if (postWaiting) {
     final anchor = DateTime.now();
     for (var i = 0; i < 2; i++) {
@@ -246,13 +267,14 @@ List<_FeedEntry> _buildFeedEntries(
 /// Soft peach for event date tiles on the feed (matches [_EventFeedCard]).
 const Color kHomeEventDateBadgeBackground = Color(0xFFFFE8E0);
 
-/// 0 All, 1 Events, 2 Offers, 3 Requests
+/// 0 All, 1 Events, 2 Offers, 3 Requests, 4 Groups
 List<_FeedEntry> _filterEntries(List<_FeedEntry> entries, int tabIndex) {
   return switch (tabIndex) {
-    0 => entries,
+    0 => entries.where((e) => e.kind != _FeedEntryKind.group).toList(),
     1 => entries.where((e) => e.kind == _FeedEntryKind.event).toList(),
     2 => entries.where((e) => e.kind == _FeedEntryKind.offer).toList(),
     3 => entries.where((e) => e.kind == _FeedEntryKind.request).toList(),
+    4 => entries.where((e) => e.kind == _FeedEntryKind.group).toList(),
     _ => entries,
   };
 }
@@ -322,6 +344,7 @@ class _EmptyFilterState extends StatelessWidget {
     1 => 'No events yet',
     2 => 'No offers yet',
     3 => 'No requests yet',
+    4 => 'No groups yet',
     _ => 'Nothing here yet',
   };
 
@@ -329,6 +352,7 @@ class _EmptyFilterState extends StatelessWidget {
     1 => 'Create an event from the Post tab.',
     2 => 'Share what you can do from the Post tab.',
     3 => 'Ask for a hand from the Post tab.',
+    4 => 'Create a group from the Post tab.',
     _ => 'Tap Make a post above, or use the Post tab.',
   };
 
@@ -370,7 +394,7 @@ class _HomeFeedFilterTabPalette {
   final Color selectedLabel;
 }
 
-/// Order: All, Events, Offers, Requests.
+/// Order: All, Events, Offers, Requests, Groups.
 final List<_HomeFeedFilterTabPalette> _homeFeedFilterTabPalettes = [
   const _HomeFeedFilterTabPalette(
     indicator: Color(0xFFE5E8EE),
@@ -387,6 +411,10 @@ final List<_HomeFeedFilterTabPalette> _homeFeedFilterTabPalettes = [
   _HomeFeedFilterTabPalette(
     indicator: postKindIconBadgeBackground(PostKind.helpRequest),
     selectedLabel: const Color(0xFF6B4A78),
+  ),
+  const _HomeFeedFilterTabPalette(
+    indicator: Color(0xFFE8F5E9),
+    selectedLabel: Color(0xFF2E7D5A),
   ),
 ];
 
@@ -483,7 +511,7 @@ class _PinnedHomeFeedHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   static const _forest = Color(0xFF4A6354);
 
-  static const _filterTabLabels = ['All', 'Events', 'Offers', 'Requests'];
+  static const _filterTabLabels = ['All', 'Events', 'Offers', 'Requests', 'Groups'];
 
   @override
   double get minExtent =>
@@ -736,3 +764,113 @@ class _PostFeedCardSkeleton extends StatelessWidget {
   }
 }
 
+class _GroupFeedCard extends StatelessWidget {
+  const _GroupFeedCard({required this.group});
+
+  final CommonsGroup group;
+
+  static const _headerGreen = Color(0xFF2E7D5A);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final memberCount = group.memberIds.length;
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => context.push('/groups/${group.id}'),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F5E9),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.diversity_3_outlined,
+                      color: _headerGreen,
+                      size: 26,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F5E9),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'GROUP',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: _headerGreen,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                group.name,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  height: 1.2,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (group.description.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  group.description,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.45,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Icon(
+                    Icons.people_outline,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '$memberCount ${memberCount == 1 ? 'member' : 'members'}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 20,
+                    color: _headerGreen,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
