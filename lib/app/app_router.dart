@@ -23,7 +23,7 @@ import '../features/groups/create_group_screen.dart';
 import '../features/groups/group_detail_screen.dart';
 import '../features/groups/manage_groups_screen.dart';
 import '../features/post/create_hub_screen.dart';
-import '../features/profile/connections_screen.dart';
+import '../features/profile/connection_requests_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile/staff_screen.dart';
 import 'auth_redirect.dart';
@@ -276,7 +276,7 @@ GoRouter createAppRouter({
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,
         path: '/connections',
-        builder: (context, state) => const ConnectionsScreen(),
+        builder: (context, state) => const ConnectionRequestsScreen(),
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

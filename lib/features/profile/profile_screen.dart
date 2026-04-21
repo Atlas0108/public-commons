@@ -629,58 +629,103 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
                   BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 6)),
                 ],
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '$n',
-                          style: GoogleFonts.playfairDisplay(
-                            fontSize: 40,
-                            fontWeight: FontWeight.w700,
-                            color: _headerGreen,
-                            height: 1,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'CONNECTIONS',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            letterSpacing: 0.8,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF6B6B6B),
-                          ),
-                        ),
-                      ],
+                  Text(
+                    '$n',
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 40,
+                      fontWeight: FontWeight.w700,
+                      color: _headerGreen,
+                      height: 1,
                     ),
                   ),
-                  if (tappable)
-                    StreamBuilder<int>(
-                      stream: svc.incomingRequestCountStream(),
-                      builder: (context, pendingSnap) {
-                        final pending = pendingSnap.data ?? 0;
-                        if (pending <= 0) return const SizedBox.shrink();
-                        return PendingConnectionRequestsBadge(count: pending);
-                      },
+                  const SizedBox(height: 6),
+                  Text(
+                    'CONNECTIONS',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      letterSpacing: 0.8,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF6B6B6B),
                     ),
+                  ),
                 ],
               ),
             ),
             if (tappable) ...[
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: () => context.push('/connections'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _headerGreen,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text('Manage connections'),
+              const SizedBox(height: 16),
+              StreamBuilder<int>(
+                stream: svc.incomingRequestCountStream(),
+                builder: (context, pendingSnap) {
+                  final pending = pendingSnap.data ?? 0;
+                  return Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => context.push('/connections'),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: const [
+                            BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 6)),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: pending > 0 
+                                    ? const Color(0xFFFFEBEB)
+                                    : const Color(0xFFE8F5E9),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.person_add_outlined,
+                                color: pending > 0 
+                                    ? const Color(0xFFD32F2F)
+                                    : _headerGreen,
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Connection Requests',
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF141414),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    pending > 0
+                                        ? '$pending pending ${pending == 1 ? 'request' : 'requests'}'
+                                        : 'No pending requests',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: _slateSubtitle,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (pending > 0)
+                              PendingConnectionRequestsBadge(count: pending),
+                            const SizedBox(width: 8),
+                            Icon(Icons.chevron_right, color: _slateSubtitle, size: 20),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ],
           ],
