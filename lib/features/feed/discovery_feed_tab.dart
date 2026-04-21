@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models/community_event.dart';
@@ -18,6 +17,7 @@ import '../../core/utils/event_formatting.dart';
 import '../../core/utils/merge_community_events.dart';
 import '../../core/constants/default_geo.dart';
 import '../../widgets/post_author_row.dart';
+import '../../widgets/post_feed_card.dart';
 import '../../widgets/post_reaction_buttons.dart';
 import '../../widgets/post_save_button.dart';
 
@@ -123,63 +123,9 @@ class _PostTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (post.kind) {
-      PostKind.helpOffer => Colors.green.shade700,
-      PostKind.helpRequest => Colors.blue.shade700,
-      PostKind.communityEvent => Colors.deepOrange.shade700,
-      PostKind.bulletin => Colors.purple.shade700,
-    };
-    final label = switch (post.kind) {
-      PostKind.helpOffer => 'Offer',
-      PostKind.helpRequest => 'Request',
-      PostKind.communityEvent => 'Event',
-      PostKind.bulletin => 'Bulletin',
-    };
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Card(
-            margin: EdgeInsets.zero,
-            child: ListTile(
-              isThreeLine: true,
-              leading: CircleAvatar(backgroundColor: color.withValues(alpha: 0.2), child: Text(label[0])),
-              title: Text(post.displayTitleLine),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    DateFormat.yMMMd().add_jm().format(post.createdAt),
-                  ),
-                  PostAuthorTapRow(
-                    authorId: post.authorId,
-                    authorName: post.authorName,
-                    avatarRadius: 16,
-                    textStyle: Theme.of(context).textTheme.bodySmall,
-                    enableProfileTap: false,
-                  ),
-                ],
-              ),
-              onTap: () => post.kind == PostKind.communityEvent
-                  ? context.push('/event/${post.id}')
-                  : context.push('/posts/${post.id}'),
-            ),
-          ),
-          Positioned(
-            right: 6,
-            bottom: 6,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                PostReactionButtons(postId: post.id, compact: true),
-                const SizedBox(width: 6),
-                PostSaveButton(contentId: post.id),
-              ],
-            ),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.only(bottom: 16),
+      child: PostFeedCard(post: post),
     );
   }
 }

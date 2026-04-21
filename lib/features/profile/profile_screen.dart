@@ -7,13 +7,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../app/auth_redirect.dart';
 import '../../app/view_as_controller.dart';
 import '../../core/models/post.dart';
-import '../../core/models/post_kind.dart';
 import '../../core/models/user_account_type.dart';
 import '../../core/models/user_profile.dart';
 import '../../core/models/group.dart';
@@ -29,7 +27,7 @@ import '../../core/utils/blob_from_object_url.dart';
 // import '../../widgets/didit_verification_sheet.dart';
 import '../../widgets/close_to_shell.dart';
 import '../../widgets/pending_connection_requests_badge.dart';
-import '../../widgets/post_kind_icon_badge.dart';
+import '../../widgets/post_feed_card.dart';
 import '../../widgets/view_as_identity_menu.dart';
 
 /// Matches the home cream canvas.
@@ -542,8 +540,8 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
           children: [
             for (var i = 0; i < posts.length; i++)
               Padding(
-                padding: EdgeInsets.only(bottom: i < posts.length - 1 ? 12 : 0),
-                child: _ProfileAuthorPostCard(post: posts[i]),
+                padding: EdgeInsets.only(bottom: i < posts.length - 1 ? 16 : 0),
+                child: PostFeedCard(post: posts[i]),
               ),
           ],
         );
@@ -883,116 +881,6 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
           ),
         ),
       ],
-      ),
-    );
-  }
-}
-
-class _ProfileAuthorPostCard extends StatelessWidget {
-  const _ProfileAuthorPostCard({required this.post});
-
-  final CommonsPost post;
-
-  void _open(BuildContext context) {
-    if (post.kind == PostKind.communityEvent) {
-      context.push('/event/${post.id}');
-    } else {
-      context.push('/posts/${post.id}');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final dateStr = DateFormat.yMMMd().format(post.createdAt);
-    final preview = post.body?.trim();
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _open(context),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: const [
-              BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 6)),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  PostKindIconBadge(kind: post.kind, compact: true),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      postKindListHeadline(post.kind),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        letterSpacing: 0.9,
-                        fontWeight: FontWeight.w700,
-                        color: _slateSubtitle,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    dateStr,
-                    style: theme.textTheme.labelSmall?.copyWith(color: _slateSubtitle),
-                  ),
-                ],
-              ),
-              if (post.status == PostStatus.fulfilled &&
-                  post.kind != PostKind.bulletin &&
-                  post.kind != PostKind.communityEvent) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'FULFILLED',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    letterSpacing: 0.8,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 10,
-                    color: _slateSubtitle,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 10),
-              Text(
-                post.kind == PostKind.bulletin
-                    ? (post.body?.trim().isNotEmpty == true
-                        ? post.body!.trim()
-                        : post.displayTitleLine)
-                    : post.displayTitleLine,
-                maxLines: post.kind == PostKind.bulletin ? 8 : 4,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.lora(
-                  fontSize: post.kind == PostKind.bulletin ? 16 : 18,
-                  fontWeight: FontWeight.w600,
-                  height: 1.25,
-                  color: const Color(0xFF141414),
-                ),
-              ),
-              if (post.kind != PostKind.bulletin &&
-                  preview != null &&
-                  preview.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  preview.replaceAll(RegExp(r'\s+'), ' '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: _slateSubtitle,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
       ),
     );
   }

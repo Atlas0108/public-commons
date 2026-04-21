@@ -4,13 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../app/app_scaffold_messenger.dart' show appScaffoldMessengerKey;
 import '../../core/models/group.dart';
 import '../../core/models/post.dart';
-import '../../core/models/post_kind.dart';
 import '../../core/models/user_connection.dart';
 import '../../core/models/user_profile.dart';
 import '../../core/services/connection_service.dart';
@@ -18,6 +16,7 @@ import '../../core/services/group_service.dart';
 import '../../core/services/post_service.dart';
 import '../../core/services/user_profile_service.dart';
 import '../../widgets/close_to_shell.dart' show CloseToShellIconButton, popOrGoHome;
+import '../../widgets/post_feed_card.dart';
 
 class GroupDetailScreen extends StatelessWidget {
   const GroupDetailScreen({super.key, required this.groupId});
@@ -698,18 +697,8 @@ class _GroupPostFeedSection extends StatelessWidget {
 
   final String groupId;
 
-  static String _kindLabel(PostKind k) {
-    return switch (k) {
-      PostKind.helpOffer => 'Offer',
-      PostKind.helpRequest => 'Request',
-      PostKind.communityEvent => 'Event',
-      PostKind.bulletin => 'Bulletin',
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
-    final fmt = DateFormat.yMMMd().add_jm();
     return StreamBuilder<List<CommonsPost>>(
       stream: context.read<PostService>().groupPostsFeed(groupId),
       builder: (context, snap) {
@@ -764,81 +753,8 @@ class _GroupPostFeedSection extends StatelessWidget {
           children: [
             for (final p in posts)
               Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Material(
-                  color: cs.surfaceContainerLow,
-                  elevation: 0,
-                  shadowColor: Colors.transparent,
-                  borderRadius: BorderRadius.circular(18),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: () {
-                      if (p.kind == PostKind.communityEvent) {
-                        context.push('/event/${p.id}');
-                      } else {
-                        context.push('/posts/${p.id}');
-                      }
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: cs.primaryContainer.withValues(alpha: 0.65),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: Icon(
-                                p.kind == PostKind.communityEvent
-                                    ? Icons.event_available_outlined
-                                    : p.kind == PostKind.bulletin
-                                        ? Icons.campaign_outlined
-                                        : p.kind == PostKind.helpOffer
-                                            ? Icons.handshake_outlined
-                                            : Icons.support_agent_outlined,
-                                color: cs.onPrimaryContainer,
-                                size: 22,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  p.displayTitleLine,
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.25,
-                                      ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  '${_kindLabel(p.kind)} · ${fmt.format(p.createdAt.toLocal())}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: cs.onSurfaceVariant,
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(left: 4, top: 2),
-                            child: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+                padding: const EdgeInsets.only(bottom: 16),
+                child: PostFeedCard(post: p),
               ),
           ],
         );

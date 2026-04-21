@@ -1,7 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
 
@@ -17,36 +16,8 @@ import '../../core/services/post_service.dart';
 import '../../core/services/user_profile_service.dart';
 import 'feed_browse_location_sheet.dart';
 import 'public_commons_invite_sheet.dart';
-import '../../widgets/adaptive_post_cover_frame.dart';
-import '../../widgets/expanded_post_card.dart';
-import '../../widgets/post_author_row.dart';
-import '../../widgets/post_comment_button.dart';
+import '../../widgets/post_feed_card.dart';
 import '../../widgets/post_kind_icon_badge.dart';
-import '../../widgets/post_reaction_buttons.dart';
-import '../../widgets/post_save_button.dart';
-
-Widget _feedCardWithSave(String contentId, Widget editorialCard, {VoidCallback? onCommentTap}) {
-  return Stack(
-    clipBehavior: Clip.none,
-    children: [
-      editorialCard,
-      Positioned(
-        right: 6,
-        bottom: 6,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            PostReactionButtons(postId: contentId, compact: true),
-            const SizedBox(width: 6),
-            PostCommentButton(postId: contentId, compact: true, onTap: onCommentTap),
-            const SizedBox(width: 6),
-            PostSaveButton(contentId: contentId),
-          ],
-        ),
-      ),
-    ],
-  );
-}
 
 /// Home: community events and help-desk posts (newest first), with category tabs.
 class HomeScreen extends StatefulWidget {
@@ -236,7 +207,7 @@ List<_FeedEntry> _buildFeedEntries(
     entries.add(
       _FeedEntry(
         at: post.createdAt,
-        card: _PostFeedCard(post: post),
+        card: PostFeedCard(post: post),
         kind: _FeedEntryKind.event,
       ),
     );
@@ -251,7 +222,7 @@ List<_FeedEntry> _buildFeedEntries(
     entries.add(
       _FeedEntry(
         at: p.createdAt,
-        card: _PostFeedCard(post: p),
+        card: PostFeedCard(post: p),
         kind: kind,
       ),
     );
@@ -632,7 +603,7 @@ class _EventsHero extends StatelessWidget {
         Text.rich(
           TextSpan(
             style: const TextStyle(
-              fontFamily: 'Castelle',
+              fontFamily: 'ResolideSerif',
               fontSize: 40,
               fontWeight: FontWeight.w400,
               height: 1.08,
@@ -701,7 +672,7 @@ class _PostFeedCardSkeleton extends StatelessWidget {
     }
 
     return IgnorePointer(
-      child: _EditorialCard(
+      child: EditorialCard(
         onTap: () {},
         child: Shimmer.fromColors(
           baseColor: _bone,
@@ -765,258 +736,3 @@ class _PostFeedCardSkeleton extends StatelessWidget {
   }
 }
 
-class _PostFeedCard extends StatelessWidget {
-  const _PostFeedCard({required this.post});
-
-  final CommonsPost post;
-
-  static const _categoryColor = Color(0xFF6B7B8C);
-  static const _forestCategory = Color(0xFF4A6354);
-  static const _arrowColor = Color(0xFF8E9499);
-  static const _bodyColor = Color(0xFF5C6268);
-
-  String _descriptionPreview() {
-    final b = post.body?.trim();
-    if (b != null && b.isNotEmpty) {
-      return b.replaceAll(RegExp(r'\s+'), ' ');
-    }
-    return 'Tap to read more.';
-  }
-
-  bool get _hasImage => post.imageUrl != null && post.imageUrl!.trim().isNotEmpty;
-
-  void _openDetail(BuildContext context) {
-    openExpandedPostCard(context, post);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_hasImage) {
-      return _buildImageHeroCard(context);
-    }
-
-    return _feedCardWithSave(
-      post.id,
-      Hero(
-        tag: 'post_card_${post.id}',
-        child: _EditorialCard(
-          onTap: () => _openDetail(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  PostKindIconBadge(kind: post.kind),
-                  const Padding(
-                    padding: EdgeInsets.only(top: 6),
-                    child: Icon(Icons.arrow_forward, size: 22, color: _arrowColor),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Text(
-                postKindListHeadline(post.kind),
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: _categoryColor,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.1,
-                  fontSize: 11,
-                ),
-              ),
-              if (post.status == PostStatus.fulfilled) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'FULFILLED',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: _categoryColor,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.0,
-                    fontSize: 10,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 8),
-              Text(
-                post.displayTitleLine,
-                style: GoogleFonts.lora(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
-                  height: 1.25,
-                  color: const Color(0xFF141414),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                _descriptionPreview(),
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: _bodyColor, height: 1.45),
-              ),
-              const SizedBox(height: 20),
-              PostAuthorTapRow(
-                authorId: post.authorId,
-                authorName: post.authorName,
-                enableProfileTap: false,
-              ),
-            ],
-          ),
-        ),
-      ),
-      onCommentTap: () => _openCommentDetail(context),
-    );
-  }
-
-  void _openCommentDetail(BuildContext context) {
-    openExpandedPostCard(context, post, focusComments: true);
-  }
-
-  Widget _buildImageHeroCard(BuildContext context) {
-    final url = post.imageUrl!.trim();
-
-    return _feedCardWithSave(
-      post.id,
-      Hero(
-        tag: 'post_card_${post.id}',
-        child: _EditorialCard(
-          onTap: () => _openDetail(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: AdaptivePostCoverFrame(
-                  child: Image.network(
-                    url,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return ColoredBox(
-                        color: Colors.grey.shade200,
-                        child: Center(
-                          child: SizedBox(
-                            width: 28,
-                            height: 28,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.grey.shade500,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                    errorBuilder: (_, __, ___) => ColoredBox(
-                      color: Colors.grey.shade300,
-                      child: Icon(Icons.broken_image_outlined, color: Colors.grey.shade600, size: 48),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          postKindListHeadline(post.kind),
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: _forestCategory,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.9,
-                            fontSize: 11,
-                          ),
-                        ),
-                        if (post.status == PostStatus.fulfilled) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            'FULFILLED',
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: _forestCategory,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.8,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  PostKindIconBadge(kind: post.kind, compact: true),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                post.displayTitleLine,
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w500,
-                  height: 1.2,
-                  color: const Color(0xFF141414),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                _descriptionPreview(),
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: _bodyColor, height: 1.5, fontSize: 15),
-              ),
-              const SizedBox(height: 20),
-              PostAuthorTapRow(
-                authorId: post.authorId,
-                authorName: post.authorName,
-                enableProfileTap: false,
-              ),
-            ],
-          ),
-        ),
-      ),
-      onCommentTap: () => _openCommentDetail(context),
-    );
-  }
-}
-
-class _EditorialCard extends StatelessWidget {
-  const _EditorialCard({required this.onTap, required this.child});
-
-  final VoidCallback onTap;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.07),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(padding: const EdgeInsets.all(24), child: child),
-        ),
-      ),
-    );
-  }
-}
