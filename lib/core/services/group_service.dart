@@ -38,6 +38,7 @@ class GroupService {
   Future<String> createGroup({
     required String name,
     required String description,
+    required String rules,
     required GroupVisibility visibility,
     List<String> additionalMemberIds = const [],
   }) async {
@@ -52,6 +53,7 @@ class GroupService {
     await ref.set({
       'name': name.trim(),
       'description': description.trim(),
+      'rules': rules.trim(),
       'visibility': visibility == GroupVisibility.public ? 'public' : 'private',
       'ownerId': user.uid,
       'memberIds': memberIds.toList(),
@@ -91,12 +93,16 @@ class GroupService {
     required String groupId,
     required String name,
     required String description,
+    required String rules,
+    required GroupVisibility visibility,
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw StateError('Not signed in');
     await _groups.doc(groupId).update({
       'name': name.trim(),
       'description': description.trim(),
+      'rules': rules.trim(),
+      'visibility': visibility == GroupVisibility.public ? 'public' : 'private',
     });
   }
 }

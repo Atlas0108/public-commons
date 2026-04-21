@@ -11,6 +11,7 @@ class CommonsGroup {
     required this.id,
     required this.name,
     required this.description,
+    required this.rules,
     required this.visibility,
     required this.ownerId,
     required this.memberIds,
@@ -20,6 +21,8 @@ class CommonsGroup {
   final String id;
   final String name;
   final String description;
+  /// Community guidelines shown on the group profile.
+  final String rules;
   final GroupVisibility visibility;
   final String ownerId;
   final List<String> memberIds;
@@ -52,10 +55,12 @@ class CommonsGroup {
     final name = (data['name'] as String?)?.trim();
     if (name == null || name.isEmpty) return null;
     final description = (data['description'] as String?)?.trim() ?? '';
+    final rules = (data['rules'] as String?)?.trim() ?? '';
     return CommonsGroup(
       id: doc.id,
       name: name,
       description: description,
+      rules: rules,
       visibility: vis,
       ownerId: owner,
       memberIds: memberIds,

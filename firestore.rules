@@ -207,20 +207,26 @@ service cloud.firestore {
         && request.resource.data.keys().hasAll([
           'name',
           'description',
+          'rules',
           'visibility',
           'ownerId',
           'memberIds',
-        ]);
+        ])
+        && request.resource.data.rules is string
+        && request.resource.data.rules.size() <= 10000;
 
-      // Owner edits details and membership; non-owners may only remove themselves (leave).
+      // Owner edits details, rules, visibility, and membership; non-owners may only remove themselves (leave).
       allow update: if signedIn()
         && request.resource.data.ownerId == resource.data.ownerId
-        && request.resource.data.visibility == resource.data.visibility
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 200
         && request.resource.data.description is string
         && request.resource.data.description.size() <= 8000
+        && request.resource.data.rules is string
+        && request.resource.data.rules.size() <= 10000
+        && request.resource.data.visibility is string
+        && request.resource.data.visibility in ['public', 'private']
         && request.resource.data.memberIds is list
         && request.resource.data.memberIds.size() > 0
         && request.resource.data.memberIds.size() <= 200
@@ -234,6 +240,8 @@ service cloud.firestore {
             && !groupIsOwner()
             && request.resource.data.name == resource.data.name
             && request.resource.data.description == resource.data.description
+            && request.resource.data.visibility == resource.data.visibility
+            && (!('rules' in resource.data) || request.resource.data.rules == resource.data.rules)
             && !(uid() in request.resource.data.memberIds)
             && request.resource.data.memberIds.size() == resource.data.memberIds.size() - 1
             && resource.data.memberIds.hasAll(request.resource.data.memberIds)

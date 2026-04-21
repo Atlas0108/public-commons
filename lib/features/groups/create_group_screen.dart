@@ -21,6 +21,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _description = TextEditingController();
+  final _rules = TextEditingController();
   GroupVisibility _visibility = GroupVisibility.public;
   final Set<String> _selectedPeerIds = {};
   bool _busy = false;
@@ -29,6 +30,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   void dispose() {
     _name.dispose();
     _description.dispose();
+    _rules.dispose();
     super.dispose();
   }
 
@@ -47,6 +49,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       final id = await svc.createGroup(
         name: _name.text,
         description: _description.text,
+        rules: _rules.text,
         visibility: _visibility,
         additionalMemberIds: _selectedPeerIds.toList(),
       );
@@ -100,6 +103,19 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               ),
               maxLines: 4,
               maxLength: 2000,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _rules,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Group rules (optional)',
+                hintText: 'Be kind, stay on topic, how to get help…',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+              maxLines: 6,
+              maxLength: 8000,
             ),
             const SizedBox(height: 24),
             Text('Visibility', style: Theme.of(context).textTheme.titleSmall),

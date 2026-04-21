@@ -98,6 +98,8 @@ class GroupDetailScreen extends StatelessWidget {
           body: ListView(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 100),
             children: [
+              Text('Visibility', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerLeft,
                 child: Chip(
@@ -109,8 +111,19 @@ class GroupDetailScreen extends StatelessWidget {
                 ),
               ),
               if (g.description.isNotEmpty) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 20),
+                Text('About', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
                 Text(g.description, style: Theme.of(context).textTheme.bodyLarge),
+              ],
+              if (g.rules.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                Text('Rules', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                SelectableText(
+                  g.rules,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.45),
+                ),
               ],
               const SizedBox(height: 24),
               Text('Group posts', style: Theme.of(context).textTheme.titleMedium),
@@ -129,9 +142,9 @@ class GroupDetailScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
-                  onPressed: () => _editDetails(context, g),
+                  onPressed: () => _openEditGroupSheet(context, g),
                   icon: const Icon(Icons.edit_outlined),
-                  label: const Text('Edit name & description'),
+                  label: const Text('Edit group'),
                 ),
               ],
               if (isMember && !isOwner) ...[
@@ -217,62 +230,23 @@ class GroupDetailScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _editDetails(BuildContext context, CommonsGroup g) async {
-    final nameCtrl = TextEditingController(text: g.name);
-    final descCtrl = TextEditingController(text: g.description);
-    try {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Edit group'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Name'),
-                  textCapitalization: TextCapitalization.sentences,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: descCtrl,
-                  decoration: const InputDecoration(labelText: 'Description'),
-                  maxLines: 3,
-                  textCapitalization: TextCapitalization.sentences,
-                ),
-              ],
-            ),
+  Future<void> _openEditGroupSheet(BuildContext context, CommonsGroup g) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: false,
+      builder: (ctx) {
+        final viewInsets = MediaQuery.viewInsetsOf(ctx);
+        final height = MediaQuery.sizeOf(ctx).height;
+        return Padding(
+          padding: EdgeInsets.only(bottom: viewInsets.bottom),
+          child: SizedBox(
+            height: height,
+            child: _EditGroupSheet(group: g),
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
-          ],
-        ),
-      );
-      if (ok != true || !context.mounted) return;
-      try {
-        await context.read<GroupService>().updateGroupDetails(
-              groupId: g.id,
-              name: nameCtrl.text,
-              description: descCtrl.text,
-            );
-        if (context.mounted) {
-          appScaffoldMessengerKey.currentState?.showSnackBar(
-            const SnackBar(content: Text('Saved.')),
-          );
-        }
-      } on Object catch (e) {
-        if (context.mounted) {
-          appScaffoldMessengerKey.currentState?.showSnackBar(
-            SnackBar(content: Text('Could not save: $e')),
-          );
-        }
-      }
-    } finally {
-      nameCtrl.dispose();
-      descCtrl.dispose();
-    }
+        );
+      },
+    );
   }
 
   Future<void> _confirmLeave(BuildContext context, String id) async {
@@ -303,6 +277,162 @@ class GroupDetailScreen extends StatelessWidget {
         );
       }
     }
+  }
+}
+
+class _EditGroupSheet extends StatefulWidget {
+  const _EditGroupSheet({required this.group});
+
+  final CommonsGroup group;
+
+  @override
+  State<_EditGroupSheet> createState() => _EditGroupSheetState();
+}
+
+class _EditGroupSheetState extends State<_EditGroupSheet> {
+  late final TextEditingController _name;
+  late final TextEditingController _description;
+  late final TextEditingController _rules;
+  late GroupVisibility _visibility;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final g = widget.group;
+    _name = TextEditingController(text: g.name);
+    _description = TextEditingController(text: g.description);
+    _rules = TextEditingController(text: g.rules);
+    _visibility = g.visibility;
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _description.dispose();
+    _rules.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await context.read<GroupService>().updateGroupDetails(
+            groupId: widget.group.id,
+            name: _name.text,
+            description: _description.text,
+            rules: _rules.text,
+            visibility: _visibility,
+          );
+      if (!mounted) return;
+      Navigator.pop(context);
+      appScaffoldMessengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('Saved.')),
+      );
+    } on Object catch (e) {
+      if (mounted) {
+        appScaffoldMessengerKey.currentState?.showSnackBar(
+          SnackBar(content: Text('Could not save: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: _saving ? null : () => Navigator.pop(context),
+        ),
+        title: const Text('Edit group'),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Save'),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+        children: [
+          Text('Visibility', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          SegmentedButton<GroupVisibility>(
+            segments: const [
+              ButtonSegment(
+                value: GroupVisibility.public,
+                label: Text('Public'),
+                icon: Icon(Icons.public_outlined),
+              ),
+              ButtonSegment(
+                value: GroupVisibility.private,
+                label: Text('Private'),
+                icon: Icon(Icons.lock_outline),
+              ),
+            ],
+            selected: {_visibility},
+            onSelectionChanged: _saving
+                ? (_) {}
+                : (s) => setState(() => _visibility = s.first),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _visibility == GroupVisibility.public
+                ? 'Anyone signed in can find this group and read its posts.'
+                : 'Only members can read this group and its posts.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 24),
+          TextField(
+            controller: _name,
+            enabled: !_saving,
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              border: OutlineInputBorder(),
+            ),
+            textCapitalization: TextCapitalization.sentences,
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _description,
+            enabled: !_saving,
+            decoration: const InputDecoration(
+              labelText: 'Description',
+              border: OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+            maxLines: 4,
+            textCapitalization: TextCapitalization.sentences,
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _rules,
+            enabled: !_saving,
+            decoration: const InputDecoration(
+              labelText: 'Rules',
+              hintText: 'Community guidelines for members',
+              border: OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+            maxLines: 8,
+            textCapitalization: TextCapitalization.sentences,
+          ),
+        ],
+      ),
+    );
   }
 }
 
