@@ -12,12 +12,14 @@ import 'package:provider/provider.dart';
 import '../../app/auth_redirect.dart';
 import '../../app/view_as_controller.dart';
 import '../../core/models/post.dart';
+import '../../core/models/post_kind.dart';
 import '../../core/models/user_account_type.dart';
 import '../../core/models/user_profile.dart';
 import '../../core/models/group.dart';
 import '../../core/services/group_service.dart';
 import '../../core/services/post_service.dart';
 import '../../core/services/connection_service.dart';
+import '../../core/services/follow_service.dart';
 import '../../core/services/messaging_service.dart';
 import '../../core/services/user_profile_service.dart';
 import '../inbox/chat_screen.dart';
@@ -26,6 +28,8 @@ import 'set_home_area_sheet.dart';
 import '../../core/utils/blob_from_object_url.dart';
 // import '../../widgets/didit_verification_sheet.dart';
 import '../../widgets/close_to_shell.dart';
+import '../../widgets/follow_button.dart';
+import '../../widgets/interests_picker.dart';
 import '../../widgets/pending_connection_requests_badge.dart';
 import '../../widgets/post_feed_card.dart';
 import '../../widgets/view_as_identity_menu.dart';
@@ -254,11 +258,17 @@ class _ProfileIdentityPinnedDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
+enum _CommunitiesFilter { all, created, joined }
+
 class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderStateMixin {
   bool _uploadingPhoto = false;
   /// True once the user has scrolled past the avatar so the identity header is pinned.
   bool _identityHeaderStuck = false;
   late TabController _tabController;
+  /// Filter for posts tab: null means all posts, otherwise filter by PostKind.
+  PostKind? _postsFilter;
+  /// Filter for communities tab.
+  _CommunitiesFilter _communitiesFilter = _CommunitiesFilter.all;
 
   UserProfile get profile => widget.profile;
 
@@ -474,60 +484,260 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
     }
   }
 
+  Widget _buildPostsFilterChips(ThemeData theme) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _PostFilterChip(
+            label: 'All',
+            selected: _postsFilter == null,
+            onSelected: () => setState(() => _postsFilter = null),
+          ),
+          const SizedBox(width: 8),
+          _PostFilterChip(
+            label: 'Offers',
+            selected: _postsFilter == PostKind.helpOffer,
+            onSelected: () => setState(() => _postsFilter = PostKind.helpOffer),
+          ),
+          const SizedBox(width: 8),
+          _PostFilterChip(
+            label: 'Requests',
+            selected: _postsFilter == PostKind.helpRequest,
+            onSelected: () => setState(() => _postsFilter = PostKind.helpRequest),
+          ),
+          const SizedBox(width: 8),
+          _PostFilterChip(
+            label: 'Events',
+            selected: _postsFilter == PostKind.communityEvent,
+            onSelected: () => setState(() => _postsFilter = PostKind.communityEvent),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPostsTab(BuildContext context, ThemeData theme) {
-    return StreamBuilder<List<CommonsPost>>(
-      stream: context.read<PostService>().postsByAuthorId(profile.uid),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        final posts = snap.data ?? [];
-        if (posts.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Text(
-              'No posts yet.',
-              style: theme.textTheme.bodyMedium?.copyWith(color: _slateSubtitle),
-            ),
-          );
-        }
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < posts.length; i++)
-              Padding(
-                padding: EdgeInsets.only(bottom: i < posts.length - 1 ? 16 : 0),
-                child: PostFeedCard(post: posts[i]),
-              ),
-          ],
-        );
-      },
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildPostsFilterChips(theme),
+        const SizedBox(height: 16),
+        StreamBuilder<List<CommonsPost>>(
+          stream: context.read<PostService>().postsByAuthorId(profile.uid),
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final allPosts = snap.data ?? [];
+            final posts = _postsFilter == null
+                ? allPosts
+                : allPosts.where((p) => p.kind == _postsFilter).toList();
+            if (allPosts.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  'No posts yet.',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: _slateSubtitle),
+                ),
+              );
+            }
+            if (posts.isEmpty) {
+              final filterLabel = _postsFilter == PostKind.helpOffer
+                  ? 'offers'
+                  : _postsFilter == PostKind.helpRequest
+                      ? 'requests'
+                      : 'events';
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  'No $filterLabel yet.',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: _slateSubtitle),
+                ),
+              );
+            }
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < posts.length; i++)
+                  Padding(
+                    padding: EdgeInsets.only(bottom: i < posts.length - 1 ? 16 : 0),
+                    child: PostFeedCard(post: posts[i]),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCommunitiesFilterChips(ThemeData theme) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _PostFilterChip(
+            label: 'All',
+            selected: _communitiesFilter == _CommunitiesFilter.all,
+            onSelected: () => setState(() => _communitiesFilter = _CommunitiesFilter.all),
+          ),
+          const SizedBox(width: 8),
+          _PostFilterChip(
+            label: 'Created by you',
+            selected: _communitiesFilter == _CommunitiesFilter.created,
+            onSelected: () => setState(() => _communitiesFilter = _CommunitiesFilter.created),
+          ),
+          const SizedBox(width: 8),
+          _PostFilterChip(
+            label: 'Joined',
+            selected: _communitiesFilter == _CommunitiesFilter.joined,
+            onSelected: () => setState(() => _communitiesFilter = _CommunitiesFilter.joined),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildGroupsTab(BuildContext context, ThemeData theme) {
-    return StreamBuilder(
-      stream: context.read<GroupService>().myGroupsStream(),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        final groups = snap.data ?? [];
-        if (groups.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Column(
-              children: [
-                Text(
-                  'No groups yet.',
-                  style: theme.textTheme.bodyMedium?.copyWith(color: _slateSubtitle),
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildCommunitiesFilterChips(theme),
+        const SizedBox(height: 16),
+        StreamBuilder<List<CommonsGroup>>(
+          stream: context.read<GroupService>().myGroupsStream(),
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final allGroups = snap.data ?? [];
+
+            final createdGroups = currentUid != null
+                ? allGroups.where((g) => g.ownerId == currentUid).toList()
+                : <CommonsGroup>[];
+            final joinedGroups = currentUid != null
+                ? allGroups.where((g) => g.ownerId != currentUid).toList()
+                : <CommonsGroup>[];
+
+            final List<CommonsGroup> filteredGroups;
+            switch (_communitiesFilter) {
+              case _CommunitiesFilter.all:
+                filteredGroups = allGroups;
+              case _CommunitiesFilter.created:
+                filteredGroups = createdGroups;
+              case _CommunitiesFilter.joined:
+                filteredGroups = joinedGroups;
+            }
+
+            if (allGroups.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Column(
+                  children: [
+                    Text(
+                      'No communities yet.',
+                      style: theme.textTheme.bodyMedium?.copyWith(color: _slateSubtitle),
+                    ),
+                    if (widget.isAuthUserDoc && !widget.actingAsOrganization) ...[
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: () => context.push('/groups/new'),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Create my first community'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _headerGreen,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => context.push('/groups/manage'),
+                        icon: const Icon(Icons.explore_outlined),
+                        label: const Text('Explore communities'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _headerGreen,
+                          side: const BorderSide(color: _headerGreen),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
+              );
+            }
+
+            if (filteredGroups.isEmpty) {
+              if (_communitiesFilter == _CommunitiesFilter.created) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Column(
+                    children: [
+                      Text(
+                        "You haven't created any communities yet.",
+                        style: theme.textTheme.bodyMedium?.copyWith(color: _slateSubtitle),
+                        textAlign: TextAlign.center,
+                      ),
+                      if (widget.isAuthUserDoc && !widget.actingAsOrganization) ...[
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: () => context.push('/groups/new'),
+                          icon: const Icon(Icons.add),
+                          label: const Text('Create my first community'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _headerGreen,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              } else if (_communitiesFilter == _CommunitiesFilter.joined) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Column(
+                    children: [
+                      Text(
+                        "You haven't joined any communities yet.",
+                        style: theme.textTheme.bodyMedium?.copyWith(color: _slateSubtitle),
+                        textAlign: TextAlign.center,
+                      ),
+                      if (widget.isAuthUserDoc && !widget.actingAsOrganization) ...[
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: () => context.push('/groups/manage'),
+                          icon: const Icon(Icons.explore_outlined),
+                          label: const Text('Explore communities'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _headerGreen,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }
+            }
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < filteredGroups.length; i++)
+                  Padding(
+                    padding: EdgeInsets.only(bottom: i < filteredGroups.length - 1 ? 12 : 0),
+                    child: _GroupListTile(group: filteredGroups[i]),
+                  ),
                 if (widget.isAuthUserDoc && !widget.actingAsOrganization) ...[
                   const SizedBox(height: 12),
                   OutlinedButton(
@@ -536,35 +746,14 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
                       foregroundColor: _headerGreen,
                       side: const BorderSide(color: _headerGreen),
                     ),
-                    child: const Text('Create or manage groups'),
+                    child: const Text('Manage communities'),
                   ),
                 ],
               ],
-            ),
-          );
-        }
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < groups.length; i++)
-              Padding(
-                padding: EdgeInsets.only(bottom: i < groups.length - 1 ? 12 : 0),
-                child: _GroupListTile(group: groups[i]),
-              ),
-            if (widget.isAuthUserDoc && !widget.actingAsOrganization) ...[
-              const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: () => context.push('/groups/manage'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _headerGreen,
-                  side: const BorderSide(color: _headerGreen),
-                ),
-                child: const Text('Manage groups'),
-              ),
-            ],
-          ],
-        );
-      },
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -686,6 +875,65 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
                   );
                 },
               ),
+              const SizedBox(height: 12),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => context.push('/explore'),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 6)),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE3F2FD),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.explore_outlined,
+                            color: Color(0xFF1976D2),
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Explore',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF141414),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Find neighbors to connect with',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: _slateSubtitle,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(Icons.chevron_right, color: _slateSubtitle, size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ],
           ],
         );
@@ -803,6 +1051,10 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    const SizedBox(height: 20),
+                    _LikesReceivedCard(userId: profile.uid),
+                    const SizedBox(height: 12),
+                    _FollowStatsCard(userId: profile.uid),
                     if (profile.bio != null && profile.bio!.trim().isNotEmpty) ...[
                       const SizedBox(height: 24),
                       Align(
@@ -825,14 +1077,56 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
                         ),
                       ),
                     ],
+                    if (profile.interests.isNotEmpty) ...[
+                      const SizedBox(height: 24),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Interests',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: _slateSubtitle,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: profile.interests.map((interest) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8F5E9),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              interest,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: _headerGreen,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
                     const SizedBox(height: 20),
                     _buildPrimaryProfileActions(context, theme),
                     const SizedBox(height: 12),
-                    if (!widget.isAuthUserDoc && !(widget.fromProfileTab && widget.actingAsOrganization))
+                    if (!widget.isAuthUserDoc && !(widget.fromProfileTab && widget.actingAsOrganization)) ...[
+                      FollowButton(
+                        targetUserId: profile.uid,
+                        targetDisplayName: profile.publicDisplayLabel,
+                        myDisplayName: me?.displayName ?? 'Neighbor',
+                      ),
+                      const SizedBox(height: 8),
                       ProfileConnectionButton(
                         otherUid: profile.uid,
                         otherDisplayName: profile.publicDisplayLabel,
                       ),
+                    ],
                     if (widget.isAuthUserDoc &&
                         !widget.actingAsOrganization &&
                         (profile.accountType == UserAccountType.nonprofit ||
@@ -873,7 +1167,7 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
                         ),
                         tabs: const [
                           Tab(text: 'Posts'),
-                          Tab(text: 'Groups'),
+                          Tab(text: 'Communities'),
                           Tab(text: 'Connections'),
                         ],
                       ),
@@ -939,6 +1233,53 @@ class _ProfileBodyState extends State<_ProfileBody> with SingleTickerProviderSta
             ),
           ),
       ],
+    );
+  }
+}
+
+class _PostFilterChip extends StatelessWidget {
+  const _PostFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onSelected,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? _headerGreen : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? _headerGreen : const Color(0xFFE0E0E0),
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: _headerGreen.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : _slateSubtitle,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            fontSize: 14,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1194,6 +1535,77 @@ class _ProfileMetricCard extends StatelessWidget {
   }
 }
 
+class _LikesReceivedCard extends StatelessWidget {
+  const _LikesReceivedCard({required this.userId});
+
+  final String userId;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final profileService = context.read<UserProfileService>();
+
+    return StreamBuilder<UserProfile?>(
+      stream: profileService.profileStream(userId),
+      builder: (context, snapshot) {
+        final karma = snapshot.data?.karma ?? 0;
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [
+              BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 6)),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFCE4EC),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.favorite,
+                  color: Color(0xFFE91E63),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$karma',
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFFE91E63),
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'KARMA',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      letterSpacing: 0.8,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF6B6B6B),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _ConnectionsMetricCard extends StatelessWidget {
   const _ConnectionsMetricCard({required this.userId, required this.tappable});
 
@@ -1254,6 +1666,7 @@ class _ProfileEditSheetState extends State<_ProfileEditSheet> {
   late final TextEditingController _lastName;
   late final TextEditingController _entityName;
   late final TextEditingController _bio;
+  late List<String> _interests;
 
   @override
   void initState() {
@@ -1269,6 +1682,7 @@ class _ProfileEditSheetState extends State<_ProfileEditSheet> {
               : '',
     );
     _bio = TextEditingController(text: p.bio ?? '');
+    _interests = List.from(p.interests);
   }
 
   @override
@@ -1336,6 +1750,7 @@ class _ProfileEditSheetState extends State<_ProfileEditSheet> {
         requestsFulfilled: p.requestsFulfilled,
         eventsProgressNote: p.eventsProgressNote,
         requestsProgressNote: p.requestsProgressNote,
+        interests: _interests,
       );
       if (mounted) {
         Navigator.of(context).pop();
@@ -1450,7 +1865,12 @@ class _ProfileEditSheetState extends State<_ProfileEditSheet> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
+                InterestsPicker(
+                  selectedInterests: _interests,
+                  onChanged: (interests) => setState(() => _interests = interests),
+                ),
+                const SizedBox(height: 20),
                 OutlinedButton.icon(
                   onPressed: () => unawaited(_openSetHomeAreaWithProfile(live)),
                   icon: const Icon(Icons.location_city),
@@ -1503,5 +1923,99 @@ class _ProfileEditSheetState extends State<_ProfileEditSheet> {
     await FirebaseAuth.instance.signOut();
     if (!context.mounted) return;
     context.go('/sign-in');
+  }
+}
+
+class _FollowStatsCard extends StatelessWidget {
+  const _FollowStatsCard({required this.userId});
+
+  final String userId;
+
+  @override
+  Widget build(BuildContext context) {
+    final followService = context.read<FollowService>();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 6)),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: StreamBuilder<int>(
+              stream: followService.followerCountStream(userId),
+              builder: (context, snapshot) {
+                final count = snapshot.data ?? 0;
+                return _FollowStatColumn(
+                  count: count,
+                  label: 'FOLLOWERS',
+                );
+              },
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 40,
+            color: const Color(0xFFE0E0E0),
+          ),
+          Expanded(
+            child: StreamBuilder<int>(
+              stream: followService.followingCountStream(userId),
+              builder: (context, snapshot) {
+                final count = snapshot.data ?? 0;
+                return _FollowStatColumn(
+                  count: count,
+                  label: 'FOLLOWING',
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FollowStatColumn extends StatelessWidget {
+  const _FollowStatColumn({
+    required this.count,
+    required this.label,
+  });
+
+  final int count;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$count',
+          style: GoogleFonts.playfairDisplay(
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+            color: _headerGreen,
+            height: 1,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: theme.textTheme.labelSmall?.copyWith(
+            letterSpacing: 0.8,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF6B6B6B),
+          ),
+        ),
+      ],
+    );
   }
 }

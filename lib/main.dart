@@ -20,11 +20,14 @@ import 'core/config/app_config.dart';
 import 'core/app_google_fonts.dart';
 import 'core/config/firebase_storage_factory.dart';
 import 'core/app_trace.dart';
+import 'core/services/category_service.dart';
 import 'core/services/comments_service.dart';
 import 'core/services/connection_service.dart';
 import 'core/services/event_service.dart';
+import 'core/services/follow_service.dart';
 import 'core/services/group_service.dart';
 import 'core/services/messaging_service.dart';
+import 'core/services/moderation_service.dart';
 import 'core/services/post_service.dart';
 import 'core/services/post_reactions_service.dart';
 import 'core/services/saved_posts_service.dart';
@@ -176,12 +179,15 @@ class _FirebaseShellState extends State<_FirebaseShell> {
   late final ProfileGateRefresh _profileGate;
   late final UserProfileService _userProfileService;
   late final PostService _postService;
+  late final ModerationService _moderationService;
+  late final CategoryService _categoryService;
   late final PostReactionsService _postReactionsService;
   late final CommentsService _commentsService;
   late final SavedPostsService _savedPostsService;
   late final EventService _eventService;
   late final MessagingService _messagingService;
   late final ConnectionService _connectionService;
+  late final FollowService _followService;
   late final GroupService _groupService;
   late final ViewAsController _viewAsController;
   late final AuthRedirect _authRedirect;
@@ -198,12 +204,15 @@ class _FirebaseShellState extends State<_FirebaseShell> {
     _profileGate = ProfileGateRefresh(auth, firestore);
     _userProfileService = UserProfileService(firestore, auth, storage);
     _postService = PostService(firestore, auth, storage);
-    _postReactionsService = PostReactionsService(firestore, auth);
+    _moderationService = ModerationService(firestore);
+    _categoryService = CategoryService(firestore);
+    _postReactionsService = PostReactionsService(firestore, auth, _moderationService, _userProfileService);
     _commentsService = CommentsService(firestore, auth);
     _savedPostsService = SavedPostsService(firestore, auth);
     _eventService = EventService(firestore, auth, storage);
     _messagingService = MessagingService(firestore, auth);
     _connectionService = ConnectionService(firestore, auth);
+    _followService = FollowService(firestore, auth);
     _groupService = GroupService(firestore, auth);
     _viewAsController = ViewAsController(auth, _userProfileService);
 
@@ -228,12 +237,15 @@ class _FirebaseShellState extends State<_FirebaseShell> {
       providers: [
         Provider<UserProfileService>.value(value: _userProfileService),
         Provider<PostService>.value(value: _postService),
+        Provider<ModerationService>.value(value: _moderationService),
+        Provider<CategoryService>.value(value: _categoryService),
         Provider<PostReactionsService>.value(value: _postReactionsService),
         Provider<CommentsService>.value(value: _commentsService),
         Provider<SavedPostsService>.value(value: _savedPostsService),
         Provider<EventService>.value(value: _eventService),
         Provider<MessagingService>.value(value: _messagingService),
         Provider<ConnectionService>.value(value: _connectionService),
+        Provider<FollowService>.value(value: _followService),
         Provider<GroupService>.value(value: _groupService),
         ChangeNotifierProvider<ViewAsController>.value(value: _viewAsController),
         ChangeNotifierProvider<AuthRedirect>.value(value: _authRedirect),

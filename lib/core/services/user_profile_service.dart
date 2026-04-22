@@ -330,6 +330,7 @@ class UserProfileService {
     String? organizationName,
     String? businessName,
     String? bio,
+    List<String>? interests,
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw StateError('Not signed in');
@@ -401,6 +402,7 @@ class UserProfileService {
     required int requestsFulfilled,
     required String? eventsProgressNote,
     required String? requestsProgressNote,
+    List<String>? interests,
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw StateError('Not signed in');
@@ -486,10 +488,42 @@ class UserProfileService {
       data['requestsProgressNote'] = rn;
     }
 
+    if (interests != null) {
+      if (interests.isEmpty) {
+        data['interests'] = FieldValue.delete();
+      } else {
+        data['interests'] = interests.where((i) => i.trim().isNotEmpty).map((i) => i.trim()).toList();
+      }
+    }
+
     await _userRef(user.uid).set(data, SetOptions(merge: true));
     try {
       await user.updateDisplayName(storedDisplay.isEmpty ? null : storedDisplay);
     } on Object catch (_) {}
+    invalidateProfileCache();
+  }
+
+  /// Updates interests for the signed-in user.
+  Future<void> updateInterests(List<String> interests) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('Not signed in');
+    final data = <String, dynamic>{};
+    if (interests.isEmpty) {
+      data['interests'] = FieldValue.delete();
+    } else {
+      data['interests'] = interests.where((i) => i.trim().isNotEmpty).map((i) => i.trim()).toList();
+    }
+    await _userRef(user.uid).set(data, SetOptions(merge: true));
+    invalidateProfileCache();
+  }
+
+  /// Increments the karma for a specific user by [amount] (can be negative to decrement).
+  Future<void> incrementKarma(String uid, int amount) async {
+    if (amount == 0) return;
+    await _userRef(uid).set(
+      {'karma': FieldValue.increment(amount)},
+      SetOptions(merge: true),
+    );
     invalidateProfileCache();
   }
 
